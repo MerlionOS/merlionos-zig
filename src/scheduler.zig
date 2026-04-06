@@ -25,9 +25,35 @@ pub fn timerTick() void {
     }
 }
 
+pub fn spawnWorker(name: []const u8) ?u32 {
+    return task.spawn(name, backgroundWorkerMain);
+}
+
+pub fn schedule() bool {
+    const current_index = task.getCurrentIndex() orelse return false;
+    const next_index = task.findNextRunnable(current_index) orelse return false;
+
+    const old_task = task.getTask(current_index) orelse return false;
+    const new_task = task.getTask(next_index) orelse return false;
+
+    if (old_task.state == .running) {
+        old_task.state = .ready;
+    }
+    new_task.state = .running;
+
+    const old_rsp: *volatile u64 = &old_task.rsp;
+    const new_rsp = new_task.rsp;
+
+    task.setCurrentIndex(next_index);
+    context_switches += 1;
+    task.contextSwitch(old_rsp, new_rsp);
+    return true;
+}
+
 pub fn yield() bool {
     yield_requests += 1;
-    return false;
+    task.noteCurrentYield();
+    return schedule();
 }
 
 pub fn getTickCount() u64 {
@@ -48,4 +74,11 @@ pub fn getYieldRequests() u64 {
 
 pub fn getTimeSliceExpirations() u64 {
     return time_slice_expirations;
+}
+
+fn backgroundWorkerMain() callconv(.c) noreturn {
+    while (true) {
+        task.noteCurrentRun();
+        _ = yield();
+    }
 }

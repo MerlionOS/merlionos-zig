@@ -16,8 +16,10 @@ const commands = [_]Command{
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
     .{ .name = "echo", .description = "Print text", .handler = cmdEcho },
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
+    .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
+    .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
     .{ .name = "uptime", .description = "Time since boot", .handler = cmdUptime },
     .{ .name = "yield", .description = "Yield the CPU cooperatively", .handler = cmdYield },
     .{ .name = "version", .description = "Kernel version", .handler = cmdVersion },
@@ -62,6 +64,24 @@ fn cmdInfo(_: []const u8) void {
         task.taskCount(),
         task.runnableCount(),
     });
+    log.kprintln("Scheduler: cooperative, quantum={d}, switches={d}", .{
+        scheduler.getQuantum(),
+        scheduler.getContextSwitches(),
+    });
+}
+
+fn cmdKill(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const pid = parsePid(trimmed) orelse {
+        log.kprintln("Usage: kill <pid>", .{});
+        return;
+    };
+
+    switch (task.kill(pid)) {
+        .killed => log.kprintln("Killed task {d}.", .{pid}),
+        .not_found => log.kprintln("Task {d} not found.", .{pid}),
+        .busy_current => log.kprintln("Cannot kill the currently running task {d}.", .{pid}),
+    }
 }
 
 fn cmdMem(_: []const u8) void {
@@ -77,7 +97,7 @@ fn cmdPs(_: []const u8) void {
         return;
     }
 
-    log.kprintln("PID  STATE    TICKS  PRIO  NAME", .{});
+    log.kprintln("PID  STATE    TICKS  RUNS   YIELDS PRIO  NAME", .{});
     task.forEach(printTaskRow);
     log.kprintln("Scheduler: tick={d} quantum={d} yields={d} slices={d} switches={d}", .{
         scheduler.getTickCount(),
@@ -86,6 +106,17 @@ fn cmdPs(_: []const u8) void {
         scheduler.getTimeSliceExpirations(),
         scheduler.getContextSwitches(),
     });
+}
+
+fn cmdSpawn(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const task_name = if (trimmed.len == 0) "worker" else trimmed;
+    if (scheduler.spawnWorker(task_name)) |pid| {
+        log.kprintln("Spawned task {d}: {s}", .{ pid, task_name });
+        return;
+    }
+
+    log.kprintln("Failed to spawn task. Task table or stack pool is full.", .{});
 }
 
 fn cmdUptime(_: []const u8) void {
@@ -102,7 +133,7 @@ fn cmdUptime(_: []const u8) void {
 
 fn cmdYield(_: []const u8) void {
     if (scheduler.yield()) {
-        log.kprintln("Yielded to another runnable task.", .{});
+        log.kprintln("Yielded to another runnable task and returned.", .{});
         return;
     }
 
@@ -119,10 +150,12 @@ fn cmdVersion(_: []const u8) void {
 }
 
 fn printTaskRow(task_entry: *const task.Task, is_current: bool) void {
-    log.kprintln("{d: <4} {s: <8} {d: <6} {d: <5} {s}{s}", .{
+    log.kprintln("{d: <4} {s: <8} {d: <6} {d: <6} {d: <6} {d: <5} {s}{s}", .{
         task_entry.pid,
         @tagName(task_entry.state),
         task_entry.ticks,
+        task_entry.run_count,
+        task_entry.yield_count,
         task_entry.priority,
         task.nameSlice(task_entry),
         if (is_current) " *" else "",
@@ -135,4 +168,25 @@ fn strEql(a: []const u8, b: []const u8) bool {
         if (ca != cb) return false;
     }
     return true;
+}
+
+fn trimSpaces(value: []const u8) []const u8 {
+    var start: usize = 0;
+    var end: usize = value.len;
+
+    while (start < end and value[start] == ' ') : (start += 1) {}
+    while (end > start and value[end - 1] == ' ') : (end -= 1) {}
+
+    return value[start..end];
+}
+
+fn parsePid(value: []const u8) ?u32 {
+    if (value.len == 0) return null;
+
+    var pid: u32 = 0;
+    for (value) |ch| {
+        if (ch < '0' or ch > '9') return null;
+        pid = pid * 10 + (ch - '0');
+    }
+    return pid;
 }

@@ -18,12 +18,18 @@ zig build-obj \
     -Mroot=src/main.zig \
     --name kernel
 
+zig cc \
+    -target x86_64-freestanding-none \
+    -c src/context_switch.S \
+    -o context_switch.o
+
 # Step 2: Link with custom linker script using LLD
 zig ld.lld \
     -T linker.ld \
     -z max-page-size=4096 \
     -o zig-out/bin/kernel.elf \
-    kernel.o
+    kernel.o \
+    context_switch.o
 
-rm -f kernel.o
+rm -f kernel.o context_switch.o
 echo "[build] Kernel built: zig-out/bin/kernel.elf"
