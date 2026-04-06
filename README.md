@@ -43,8 +43,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] Kernel heap allocator (`std.mem.Allocator` interface)
 
 ### Phase 4: Keyboard + Shell
-- [ ] PS/2 keyboard driver (comptime scancode table)
-- [ ] Interactive shell with line editing and history
+- [x] PS/2 keyboard driver (comptime scancode table)
+- [x] Interactive shell with line editing and history
 - [ ] Commands: help, clear, echo, info, mem, uptime
 
 ### Phase 5: Multitasking
