@@ -37,15 +37,17 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] 8259 PIC initialization
 - [x] PIT timer at 100Hz
 
-### Phase 3: Memory Management (current)
+### Phase 3: Memory Management
 - [x] Physical frame allocator (bitmap-based)
 - [x] Virtual memory / page table manager
 - [x] Kernel heap allocator (`std.mem.Allocator` interface)
 
-### Phase 4: Keyboard + Shell
+### Phase 4: Keyboard + Shell (current)
 - [x] PS/2 keyboard driver (comptime scancode table)
 - [x] Interactive shell with line editing and history
-- [ ] Commands: help, clear, echo, info, mem, uptime
+- [x] Cursor-aware editing: insert, backspace, delete, left/right, home/end
+- [x] Commands: help, clear, echo, info, mem, uptime, version
+- [ ] Manual GUI verification for extended keys in QEMU
 
 ### Phase 5: Multitasking
 - [ ] Task management with context switching
