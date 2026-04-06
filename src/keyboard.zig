@@ -67,7 +67,9 @@ pub fn handleInterrupt() void {
                 0x51 => .page_down,
                 else => null,
             };
-            if (event) |e| pushEvent(e);
+            if (event) |e| {
+                pushEvent(e);
+            }
         }
         return;
     }

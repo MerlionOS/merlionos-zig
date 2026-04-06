@@ -42,6 +42,28 @@ pub fn run() noreturn {
                         redrawLine();
                     }
                 },
+                .delete => {
+                    if (cursor_pos < input_len) {
+                        var i = cursor_pos;
+                        while (i + 1 < input_len) : (i += 1) {
+                            input_buf[i] = input_buf[i + 1];
+                        }
+                        input_len -= 1;
+                        redrawLine();
+                    }
+                },
+                .arrow_left => {
+                    if (cursor_pos > 0) {
+                        cursor_pos -= 1;
+                        redrawLine();
+                    }
+                },
+                .arrow_right => {
+                    if (cursor_pos < input_len) {
+                        cursor_pos += 1;
+                        redrawLine();
+                    }
+                },
                 .arrow_up => {
                     if (history_count > 0) {
                         if (history_index > 0) history_index -= 1;
@@ -61,12 +83,28 @@ pub fn run() noreturn {
                         redrawLine();
                     }
                 },
+                .home => {
+                    if (cursor_pos != 0) {
+                        cursor_pos = 0;
+                        redrawLine();
+                    }
+                },
+                .end => {
+                    if (cursor_pos != input_len) {
+                        cursor_pos = input_len;
+                        redrawLine();
+                    }
+                },
                 .char => |c| {
                     if (input_len < MAX_INPUT - 1) {
-                        input_buf[input_len] = c;
+                        var i = input_len;
+                        while (i > cursor_pos) : (i -= 1) {
+                            input_buf[i] = input_buf[i - 1];
+                        }
+                        input_buf[cursor_pos] = c;
                         input_len += 1;
                         cursor_pos += 1;
-                        log.kprint("{c}", .{c});
+                        redrawLine();
                     }
                 },
                 else => {},
@@ -99,10 +137,16 @@ fn redrawLine() void {
     for (input_buf[0..input_len]) |c| {
         log.kprint("{c}", .{c});
     }
-    log.kprint("  ", .{});
+
+    var remaining = MAX_INPUT - input_len;
+    if (remaining > 4) remaining = 4;
+    for (0..remaining) |_| {
+        log.kprint(" ", .{});
+    }
+
     log.kprint("\r", .{});
     printPrompt();
-    for (input_buf[0..input_len]) |c| {
+    for (input_buf[0..cursor_pos]) |c| {
         log.kprint("{c}", .{c});
     }
 }
