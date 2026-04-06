@@ -14,6 +14,9 @@ const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
+const vfs = @import("vfs.zig");
+const procfs = @import("procfs.zig");
+const devfs = @import("devfs.zig");
 const shell = @import("shell.zig");
 
 pub const panic = @import("panic.zig").panic;
@@ -107,6 +110,11 @@ export fn _start() callconv(.c) noreturn {
     log.kprintln("[mem] Heap initialized: {s}", .{
         if (heap.isInitialized()) "yes" else "no",
     });
+
+    vfs.init();
+    procfs.init();
+    devfs.init();
+    log.kprintln("[fs] VFS initialized: /tmp /dev /proc /etc", .{});
 
     task.init();
     scheduler.init();

@@ -1,8 +1,10 @@
 const log = @import("log.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
+const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
 const task = @import("task.zig");
+const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
 
 const Command = struct {
@@ -12,11 +14,13 @@ const Command = struct {
 };
 
 const commands = [_]Command{
+    .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
     .{ .name = "echo", .description = "Print text", .handler = cmdEcho },
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
     .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
+    .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
@@ -45,6 +49,40 @@ fn cmdHelp(_: []const u8) void {
 
 fn cmdClear(_: []const u8) void {
     vga.vga_writer.clear();
+}
+
+fn cmdCat(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePath(args, false, &path_buf) orelse {
+        log.kprintln("Usage: cat <path>", .{});
+        return;
+    };
+
+    procfs.prepareRead(path);
+
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    const inode = vfs.getInode(idx) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    if (inode.node_type == .directory) {
+        log.kprintln("{s}: is a directory", .{path});
+        return;
+    }
+
+    const data = vfs.readFile(idx) orelse {
+        log.kprintln("{s}: cannot read", .{path});
+        return;
+    };
+    if (data.len == 0) return;
+
+    log.kprint("{s}", .{data});
+    if (data[data.len - 1] != '\n') {
+        log.kprint("\n", .{});
+    }
 }
 
 fn cmdEcho(args: []const u8) void {
@@ -93,6 +131,25 @@ fn cmdMem(_: []const u8) void {
     log.kprintln("  Total: {d} MB", .{pmm.totalMemory() / 1048576});
     log.kprintln("  Used:  {d} MB", .{pmm.usedMemory() / 1048576});
     log.kprintln("  Free:  {d} MB", .{pmm.freeMemory() / 1048576});
+}
+
+fn cmdLs(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePathOrRoot(args, &path_buf);
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    const inode = vfs.getInode(idx) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    if (inode.node_type != .directory) {
+        log.kprintln("{s}: not a directory", .{path});
+        return;
+    }
+
+    vfs.listDir(idx, printDirEntry);
 }
 
 fn cmdPs(_: []const u8) void {
@@ -188,6 +245,25 @@ fn trimSpaces(value: []const u8) []const u8 {
     return value[start..end];
 }
 
+const MAX_PATH = 256;
+
+fn normalizePathOrRoot(input: []const u8, buffer: *[MAX_PATH]u8) []const u8 {
+    return normalizePath(input, true, buffer) orelse "/";
+}
+
+fn normalizePath(input: []const u8, allow_root_default: bool, buffer: *[MAX_PATH]u8) ?[]const u8 {
+    const trimmed = trimSpaces(input);
+    if (trimmed.len == 0) {
+        return if (allow_root_default) "/" else null;
+    }
+    if (trimmed[0] == '/') return trimmed;
+    if (trimmed.len + 1 > buffer.len) return null;
+
+    buffer[0] = '/';
+    @memcpy(buffer[1 .. trimmed.len + 1], trimmed);
+    return buffer[0 .. trimmed.len + 1];
+}
+
 fn parsePid(value: []const u8) ?u32 {
     if (value.len == 0) return null;
 
@@ -197,4 +273,11 @@ fn parsePid(value: []const u8) ?u32 {
         pid = pid * 10 + (ch - '0');
     }
     return pid;
+}
+
+fn printDirEntry(_: u16, inode: *const vfs.Inode) void {
+    log.kprintln("{s}{s}", .{
+        vfs.getName(inode),
+        if (inode.node_type == .directory) "/" else "",
+    });
 }
