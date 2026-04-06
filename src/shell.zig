@@ -1,6 +1,7 @@
 const cpu = @import("cpu.zig");
 const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
+const scheduler = @import("scheduler.zig");
 const shell_cmds = @import("shell_cmds.zig");
 const vga = @import("vga.zig");
 
@@ -19,6 +20,7 @@ var history_index: usize = 0;
 pub fn run() noreturn {
     printPrompt();
     while (true) {
+        _ = scheduler.preemptIfNeeded();
         if (keyboard.readEvent()) |event| {
             switch (event) {
                 .enter => {
@@ -110,6 +112,7 @@ pub fn run() noreturn {
                 else => {},
             }
         } else {
+            _ = scheduler.preemptIfNeeded();
             asm volatile ("hlt");
         }
     }

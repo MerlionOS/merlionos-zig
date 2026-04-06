@@ -7,6 +7,8 @@ var quantum: u64 = DEFAULT_QUANTUM;
 var context_switches: u64 = 0;
 var yield_requests: u64 = 0;
 var time_slice_expirations: u64 = 0;
+var preempt_requests: u64 = 0;
+var preempt_pending: bool = false;
 
 pub fn init() void {
     tick_count = 0;
@@ -14,6 +16,8 @@ pub fn init() void {
     context_switches = 0;
     yield_requests = 0;
     time_slice_expirations = 0;
+    preempt_requests = 0;
+    preempt_pending = false;
 }
 
 pub fn timerTick() void {
@@ -22,6 +26,10 @@ pub fn timerTick() void {
 
     if (quantum != 0 and tick_count % quantum == 0) {
         time_slice_expirations += 1;
+        if (task.runnableCount() > 1) {
+            preempt_pending = true;
+            preempt_requests += 1;
+        }
     }
 }
 
@@ -45,6 +53,7 @@ pub fn schedule() bool {
     const new_rsp = new_task.rsp;
 
     task.setCurrentIndex(next_index);
+    new_task.run_count += 1;
     context_switches += 1;
     task.contextSwitch(old_rsp, new_rsp);
     return true;
@@ -53,6 +62,13 @@ pub fn schedule() bool {
 pub fn yield() bool {
     yield_requests += 1;
     task.noteCurrentYield();
+    preempt_pending = false;
+    return schedule();
+}
+
+pub fn preemptIfNeeded() bool {
+    if (!preempt_pending) return false;
+    preempt_pending = false;
     return schedule();
 }
 
@@ -76,9 +92,17 @@ pub fn getTimeSliceExpirations() u64 {
     return time_slice_expirations;
 }
 
+pub fn getPreemptRequests() u64 {
+    return preempt_requests;
+}
+
+pub fn hasPreemptPending() bool {
+    return preempt_pending;
+}
+
 fn backgroundWorkerMain() callconv(.c) noreturn {
     while (true) {
-        task.noteCurrentRun();
-        _ = yield();
+        _ = preemptIfNeeded();
+        asm volatile ("pause");
     }
 }

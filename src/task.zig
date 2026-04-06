@@ -56,6 +56,7 @@ pub fn registerBootTask(name: []const u8) ?u32 {
     var new_task = Task{
         .pid = next_pid,
         .state = .running,
+        .run_count = 1,
     };
     setName(&new_task, name);
 

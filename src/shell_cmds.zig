@@ -68,6 +68,10 @@ fn cmdInfo(_: []const u8) void {
         scheduler.getQuantum(),
         scheduler.getContextSwitches(),
     });
+    log.kprintln("Preemption: pending={s} requests={d}", .{
+        if (scheduler.hasPreemptPending()) "yes" else "no",
+        scheduler.getPreemptRequests(),
+    });
 }
 
 fn cmdKill(args: []const u8) void {
@@ -105,6 +109,10 @@ fn cmdPs(_: []const u8) void {
         scheduler.getYieldRequests(),
         scheduler.getTimeSliceExpirations(),
         scheduler.getContextSwitches(),
+    });
+    log.kprintln("Preemption: pending={s} requests={d}", .{
+        if (scheduler.hasPreemptPending()) "yes" else "no",
+        scheduler.getPreemptRequests(),
     });
 }
 
