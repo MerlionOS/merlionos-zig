@@ -23,24 +23,24 @@ zig build run    # Build kernel + ISO, launch in QEMU
 
 ## Roadmap
 
-### Phase 1: Boot + Output (current)
+### Phase 1: Boot + Output
 - [x] Limine boot protocol (higher-half kernel)
 - [x] UART serial COM1 driver
 - [x] VGA text mode 80x25 with colors and scrolling
 - [x] Dual output logging (serial + VGA)
 - [x] Kernel panic handler
-- [ ] Boot verification in QEMU
+- [x] Boot verification in QEMU
 
 ### Phase 2: CPU Setup
-- [ ] GDT with kernel/user segments + TSS
-- [ ] IDT with exception handlers (page fault, double fault, etc.)
-- [ ] 8259 PIC initialization
-- [ ] PIT timer at 100Hz
+- [x] GDT with kernel/user segments + TSS
+- [x] IDT with exception handlers (page fault, double fault, etc.)
+- [x] 8259 PIC initialization
+- [x] PIT timer at 100Hz
 
-### Phase 3: Memory Management
-- [ ] Physical frame allocator (bitmap-based)
-- [ ] Virtual memory / page table manager
-- [ ] Kernel heap allocator (`std.mem.Allocator` interface)
+### Phase 3: Memory Management (current)
+- [x] Physical frame allocator (bitmap-based)
+- [x] Virtual memory / page table manager
+- [x] Kernel heap allocator (`std.mem.Allocator` interface)
 
 ### Phase 4: Keyboard + Shell
 - [ ] PS/2 keyboard driver (comptime scancode table)
