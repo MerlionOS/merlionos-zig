@@ -1,5 +1,6 @@
 const cpu = @import("cpu.zig");
 const gdt = @import("gdt.zig");
+const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const pic = @import("pic.zig");
 const pit = @import("pit.zig");
@@ -102,7 +103,7 @@ export fn irq0Inner() void {
 }
 
 export fn irq1Inner() void {
-    log.kprintln("[kbd] IRQ1 received", .{});
+    keyboard.handleInterrupt();
     pic.sendEoi(1);
 }
 

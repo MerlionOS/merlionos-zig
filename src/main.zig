@@ -12,6 +12,7 @@ const pic = @import("pic.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
+const shell = @import("shell.zig");
 
 pub const panic = @import("panic.zig").panic;
 
@@ -107,6 +108,6 @@ export fn _start() callconv(.c) noreturn {
 
     cpu.enableInterrupts();
     log.kprintln("[cpu] Interrupts enabled", .{});
-    log.kprintln("[boot] Kernel initialized. Halting.", .{});
-    cpu.halt();
+    log.kprintln("[boot] Entering shell.", .{});
+    shell.run();
 }
