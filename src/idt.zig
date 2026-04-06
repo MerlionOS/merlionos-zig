@@ -4,6 +4,7 @@ const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const pic = @import("pic.zig");
 const pit = @import("pit.zig");
+const scheduler = @import("scheduler.zig");
 
 pub const IdtEntry = packed struct {
     offset_low: u16,
@@ -99,6 +100,7 @@ export fn pageFaultInner() void {
 
 export fn irq0Inner() void {
     pit.tick();
+    scheduler.timerTick();
     pic.sendEoi(0);
 }
 
@@ -157,34 +159,7 @@ fn syscallStub() callconv(.naked) void {
 
 fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) []const u8 {
     if (has_error_code) {
-        return
-            \\pushq %%rax
-            \\pushq %%rcx
-            \\pushq %%rdx
-            \\pushq %%rsi
-            \\pushq %%rdi
-            \\pushq %%r8
-            \\pushq %%r9
-            \\pushq %%r10
-            \\pushq %%r11
-            \\call 
-            ++ target ++
-            \\
-            \\popq %%r11
-            \\popq %%r10
-            \\popq %%r9
-            \\popq %%r8
-            \\popq %%rdi
-            \\popq %%rsi
-            \\popq %%rdx
-            \\popq %%rcx
-            \\popq %%rax
-            \\addq $8, %%rsp
-            \\iretq
-        ;
-    }
-
-    return
+        return 
         \\pushq %%rax
         \\pushq %%rcx
         \\pushq %%rdx
@@ -195,7 +170,7 @@ fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) [
         \\pushq %%r10
         \\pushq %%r11
         \\call 
-        ++ target ++
+    ++ target ++
         \\
         \\popq %%r11
         \\popq %%r10
@@ -206,6 +181,33 @@ fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) [
         \\popq %%rdx
         \\popq %%rcx
         \\popq %%rax
+        \\addq $8, %%rsp
         \\iretq
+        ;
+    }
+
+    return 
+    \\pushq %%rax
+    \\pushq %%rcx
+    \\pushq %%rdx
+    \\pushq %%rsi
+    \\pushq %%rdi
+    \\pushq %%r8
+    \\pushq %%r9
+    \\pushq %%r10
+    \\pushq %%r11
+    \\call 
+++ target ++
+    \\
+    \\popq %%r11
+    \\popq %%r10
+    \\popq %%r9
+    \\popq %%r8
+    \\popq %%rdi
+    \\popq %%rsi
+    \\popq %%rdx
+    \\popq %%rcx
+    \\popq %%rax
+    \\iretq
     ;
 }

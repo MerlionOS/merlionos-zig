@@ -12,6 +12,8 @@ const pic = @import("pic.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
+const task = @import("task.zig");
+const scheduler = @import("scheduler.zig");
 const shell = @import("shell.zig");
 
 pub const panic = @import("panic.zig").panic;
@@ -105,6 +107,14 @@ export fn _start() callconv(.c) noreturn {
     log.kprintln("[mem] Heap initialized: {s}", .{
         if (heap.isInitialized()) "yes" else "no",
     });
+
+    task.init();
+    scheduler.init();
+    if (task.registerBootTask("shell")) |pid| {
+        log.kprintln("[task] Boot task registered: shell (pid {d})", .{pid});
+    } else {
+        log.kprintln("[task] WARNING: failed to register boot task", .{});
+    }
 
     cpu.enableInterrupts();
     log.kprintln("[cpu] Interrupts enabled", .{});
