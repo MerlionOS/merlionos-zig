@@ -33,6 +33,9 @@ When changing boot, memory, or interrupt code, include the relevant serial outpu
 ## Commit & Pull Request Guidelines
 Keep commit messages imperative and concise, matching recent history, for example: `Implement CPU and memory init boot path`.
 
+When Codex prepares a commit, keep the human developer as the Git author and append this trailer to the commit message:
+`Co-authored-by: Codex <codex@openai.com>`
+
 Pull requests should include:
 - a short summary of behavior changes
 - the commands used to verify the change
