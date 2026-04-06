@@ -6,7 +6,10 @@ const vga = @import("vga.zig");
 
 pub fn kprint(comptime fmt: []const u8, args: anytype) void {
     serial.com1.writer().print(fmt, args) catch {};
-    vga.vga_writer.writer().print(fmt, args) catch {};
+
+    var buf: [512]u8 = undefined;
+    const rendered = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    vga.vga_writer.writeBytes(rendered);
 }
 
 pub fn kprintln(comptime fmt: []const u8, args: anytype) void {

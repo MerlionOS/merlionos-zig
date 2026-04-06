@@ -5,6 +5,13 @@ const limine = @import("limine.zig");
 const serial = @import("serial.zig");
 const vga = @import("vga.zig");
 const log = @import("log.zig");
+const cpu = @import("cpu.zig");
+const gdt = @import("gdt.zig");
+const idt = @import("idt.zig");
+const pic = @import("pic.zig");
+const pit = @import("pit.zig");
+const pmm = @import("pmm.zig");
+const heap = @import("heap.zig");
 
 pub const panic = @import("panic.zig").panic;
 
@@ -75,11 +82,31 @@ export fn _start() callconv(.c) noreturn {
         log.kprintln("[mem] WARNING: no memory map response", .{});
     }
 
-    log.kprintln("", .{});
-    log.kprintln("[boot] Kernel initialized. Halting.", .{});
+    gdt.init();
+    log.kprintln("[cpu] GDT loaded", .{});
 
-    // Halt
-    while (true) {
-        asm volatile ("hlt");
-    }
+    idt.init();
+    log.kprintln("[cpu] IDT loaded", .{});
+
+    pic.init();
+    log.kprintln("[cpu] PIC initialized", .{});
+
+    pit.init(100);
+    log.kprintln("[cpu] PIT: 100 Hz", .{});
+
+    pmm.init();
+    log.kprintln("[mem] PMM: total={d} MB free={d} MB", .{
+        pmm.totalMemory() / (1024 * 1024),
+        pmm.freeMemory() / (1024 * 1024),
+    });
+
+    heap.init();
+    log.kprintln("[mem] Heap initialized: {s}", .{
+        if (heap.isInitialized()) "yes" else "no",
+    });
+
+    cpu.enableInterrupts();
+    log.kprintln("[cpu] Interrupts enabled", .{});
+    log.kprintln("[boot] Kernel initialized. Halting.", .{});
+    cpu.halt();
 }

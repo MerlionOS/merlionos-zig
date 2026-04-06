@@ -1,0 +1,210 @@
+const cpu = @import("cpu.zig");
+const gdt = @import("gdt.zig");
+const log = @import("log.zig");
+const pic = @import("pic.zig");
+const pit = @import("pit.zig");
+
+pub const IdtEntry = packed struct {
+    offset_low: u16,
+    selector: u16,
+    ist: u8,
+    type_attr: u8,
+    offset_mid: u16,
+    offset_high: u32,
+    reserved: u32 = 0,
+};
+
+pub const InterruptFrame = extern struct {
+    rip: u64,
+    cs: u64,
+    rflags: u64,
+    rsp: u64,
+    ss: u64,
+};
+
+var idt: [256]IdtEntry = undefined;
+
+pub fn init() void {
+    for (0..idt.len) |i| {
+        idt[i] = makeGate(@ptrCast(&defaultInterruptStub), 0, 0x8E);
+    }
+
+    idt[0] = makeGate(@ptrCast(&divisionErrorStub), 0, 0x8E);
+    idt[1] = makeGate(@ptrCast(&debugStub), 0, 0x8E);
+    idt[3] = makeGate(@ptrCast(&breakpointStub), 0, 0x8E);
+    idt[6] = makeGate(@ptrCast(&invalidOpcodeStub), 0, 0x8E);
+    idt[8] = makeGate(@ptrCast(&doubleFaultStub), 1, 0x8E);
+    idt[13] = makeGate(@ptrCast(&generalProtectionStub), 0, 0x8E);
+    idt[14] = makeGate(@ptrCast(&pageFaultStub), 0, 0x8E);
+    idt[32] = makeGate(@ptrCast(&irq0Stub), 0, 0x8E);
+    idt[33] = makeGate(@ptrCast(&irq1Stub), 0, 0x8E);
+    idt[0x80] = makeGate(@ptrCast(&syscallStub), 0, 0xEE);
+
+    const idtr = cpu.IdtRegister{
+        .limit = @sizeOf(@TypeOf(idt)) - 1,
+        .base = @intFromPtr(&idt),
+    };
+    cpu.lidt(&idtr);
+}
+
+fn makeGate(handler: *const anyopaque, ist: u8, type_attr: u8) IdtEntry {
+    const addr = @intFromPtr(handler);
+    return .{
+        .offset_low = @intCast(addr & 0xFFFF),
+        .selector = gdt.KERNEL_CODE_SEL,
+        .ist = ist,
+        .type_attr = type_attr,
+        .offset_mid = @intCast((addr >> 16) & 0xFFFF),
+        .offset_high = @intCast((addr >> 32) & 0xFFFF_FFFF),
+    };
+}
+
+export fn defaultInterruptInner() void {
+    log.kprintln("[int] Unhandled interrupt", .{});
+}
+
+export fn divisionErrorInner() void {
+    log.kprintln("[cpu] Division error", .{});
+    cpu.halt();
+}
+
+export fn debugInner() void {
+    log.kprintln("[cpu] Debug trap", .{});
+}
+
+export fn breakpointInner() void {
+    log.kprintln("[cpu] Breakpoint", .{});
+}
+
+export fn invalidOpcodeInner() void {
+    log.kprintln("[cpu] Invalid opcode", .{});
+    cpu.halt();
+}
+
+export fn doubleFaultInner() void {
+    log.kprintln("[cpu] Double fault", .{});
+    cpu.halt();
+}
+
+export fn generalProtectionInner() void {
+    log.kprintln("[cpu] General protection fault", .{});
+    cpu.halt();
+}
+
+export fn pageFaultInner() void {
+    log.kprintln("[cpu] Page fault at 0x{x}", .{cpu.readCr2()});
+    cpu.halt();
+}
+
+export fn irq0Inner() void {
+    pit.tick();
+    pic.sendEoi(0);
+}
+
+export fn irq1Inner() void {
+    log.kprintln("[kbd] IRQ1 received", .{});
+    pic.sendEoi(1);
+}
+
+export fn syscallInner() void {
+    log.kprintln("[sys] int 0x80", .{});
+}
+
+fn defaultInterruptStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("defaultInterruptInner", false));
+}
+
+fn divisionErrorStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("divisionErrorInner", false));
+}
+
+fn debugStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("debugInner", false));
+}
+
+fn breakpointStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("breakpointInner", false));
+}
+
+fn invalidOpcodeStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("invalidOpcodeInner", false));
+}
+
+fn doubleFaultStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("doubleFaultInner", true));
+}
+
+fn generalProtectionStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("generalProtectionInner", true));
+}
+
+fn pageFaultStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("pageFaultInner", true));
+}
+
+fn irq0Stub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("irq0Inner", false));
+}
+
+fn irq1Stub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("irq1Inner", false));
+}
+
+fn syscallStub() callconv(.naked) void {
+    asm volatile (pushRegsAndCall("syscallInner", false));
+}
+
+fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) []const u8 {
+    if (has_error_code) {
+        return
+            \\pushq %%rax
+            \\pushq %%rcx
+            \\pushq %%rdx
+            \\pushq %%rsi
+            \\pushq %%rdi
+            \\pushq %%r8
+            \\pushq %%r9
+            \\pushq %%r10
+            \\pushq %%r11
+            \\call 
+            ++ target ++
+            \\
+            \\popq %%r11
+            \\popq %%r10
+            \\popq %%r9
+            \\popq %%r8
+            \\popq %%rdi
+            \\popq %%rsi
+            \\popq %%rdx
+            \\popq %%rcx
+            \\popq %%rax
+            \\addq $8, %%rsp
+            \\iretq
+        ;
+    }
+
+    return
+        \\pushq %%rax
+        \\pushq %%rcx
+        \\pushq %%rdx
+        \\pushq %%rsi
+        \\pushq %%rdi
+        \\pushq %%r8
+        \\pushq %%r9
+        \\pushq %%r10
+        \\pushq %%r11
+        \\call 
+        ++ target ++
+        \\
+        \\popq %%r11
+        \\popq %%r10
+        \\popq %%r9
+        \\popq %%r8
+        \\popq %%rdi
+        \\popq %%rsi
+        \\popq %%rdx
+        \\popq %%rcx
+        \\popq %%rax
+        \\iretq
+    ;
+}

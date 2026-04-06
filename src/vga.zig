@@ -44,6 +44,15 @@ pub const VgaWriter = struct {
     buffer: ?[*]volatile u16 = null,
 
     pub fn init(self: *VgaWriter) void {
+        // Limine typically boots QEMU in framebuffer mode; do not assume the
+        // legacy VGA text buffer is mapped and writable in that configuration.
+        if (limine.framebuffer_request.response) |resp| {
+            if (resp.framebuffer_count > 0) {
+                self.buffer = null;
+                return;
+            }
+        }
+
         // Try to get HHDM offset for higher-half mapping
         const hhdm_offset: u64 = blk: {
             if (limine.hhdm_request.response) |resp| {
@@ -106,6 +115,12 @@ pub const VgaWriter = struct {
 
         if (self.row >= VGA_HEIGHT) {
             self.scroll();
+        }
+    }
+
+    pub fn writeBytes(self: *VgaWriter, bytes: []const u8) void {
+        for (bytes) |byte| {
+            self.putChar(byte);
         }
     }
 

@@ -12,6 +12,7 @@ mkdir -p zig-out/bin
 zig build-obj \
     -mno-red-zone \
     -OReleaseSmall \
+    -mcpu x86_64+soft_float \
     -mcmodel=kernel \
     -target x86_64-freestanding-none \
     -Mroot=src/main.zig \
