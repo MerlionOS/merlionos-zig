@@ -1,9 +1,10 @@
-// UART 16550 serial port driver for COM1.
+// UART 16550 serial port driver.
 
 const std = @import("std");
 const cpu = @import("cpu.zig");
 
 pub const COM1_PORT: u16 = 0x3F8;
+pub const COM2_PORT: u16 = 0x2F8;
 
 pub const SerialPort = struct {
     base: u16,
@@ -20,6 +21,20 @@ pub const SerialPort = struct {
 
     fn isTransmitEmpty(self: SerialPort) bool {
         return (cpu.inb(self.base + 5) & 0x20) != 0;
+    }
+
+    pub fn isPresent(self: SerialPort) bool {
+        cpu.outb(self.base + 7, 0x5A);
+        return cpu.inb(self.base + 7) == 0x5A;
+    }
+
+    pub fn hasByte(self: SerialPort) bool {
+        return (cpu.inb(self.base + 5) & 0x01) != 0;
+    }
+
+    pub fn tryReadByte(self: SerialPort) ?u8 {
+        if (!self.hasByte()) return null;
+        return cpu.inb(self.base);
     }
 
     pub fn writeByte(self: SerialPort, byte: u8) void {
@@ -45,3 +60,4 @@ pub const SerialPort = struct {
 };
 
 pub var com1 = SerialPort{ .base = COM1_PORT };
+pub var com2 = SerialPort{ .base = COM2_PORT };

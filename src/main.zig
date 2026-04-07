@@ -14,6 +14,7 @@ const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
 const pci = @import("pci.zig");
 const e1000 = @import("e1000.zig");
+const ai = @import("ai.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
 const vfs = @import("vfs.zig");
@@ -127,6 +128,11 @@ export fn _start() callconv(.c) noreturn {
     } else {
         log.kprintln("[net] No supported e1000-family NIC detected", .{});
     }
+
+    ai.init();
+    log.kprintln("[ai] COM2 LLM proxy: {s}", .{
+        if (ai.info().available) "available" else "unavailable",
+    });
 
     vfs.init();
     procfs.init();

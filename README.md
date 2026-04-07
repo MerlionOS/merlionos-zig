@@ -64,7 +64,7 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] File commands: ls, tree, cat, mkdir, touch, write, rm, `echo > file`
 - [x] `echo > file` redirection verified end-to-end in QEMU
 
-### Phase 7: Networking (current)
+### Phase 7: Networking
 - [x] PCI bus enumeration
 - [x] `lspci` shell command
 - [x] e1000/e1000e device detection
@@ -80,8 +80,10 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] IPv4 + ICMP echo request frame construction
 - [x] ICMP echo reply polling and stats
 
-### Future
-- [ ] AI integration (COM2 serial LLM proxy)
+### Phase 8: AI Integration (current)
+- [x] COM2 UART plumbing and detection
+- [x] COM2 LLM proxy line protocol commands: `aistatus`, `aiask`, `aipoll`
+- [ ] Host-side COM2 proxy bridge validation
 
 ## Zig vs Rust: Why Rewrite?
 

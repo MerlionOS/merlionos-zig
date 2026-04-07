@@ -1,3 +1,4 @@
+const ai = @import("ai.zig");
 const arp = @import("arp.zig");
 const e1000 = @import("e1000.zig");
 const icmp = @import("icmp.zig");
@@ -18,6 +19,9 @@ const Command = struct {
 };
 
 const commands = [_]Command{
+    .{ .name = "aiask", .description = "Send one prompt to the COM2 AI proxy", .handler = cmdAiask },
+    .{ .name = "aipoll", .description = "Poll one response from the COM2 AI proxy", .handler = cmdAipoll },
+    .{ .name = "aistatus", .description = "Show COM2 AI proxy status", .handler = cmdAistatus },
     .{ .name = "arpreq", .description = "Send an ARP request for an IPv4 address", .handler = cmdArpreq },
     .{ .name = "arppoll", .description = "Poll one ARP reply from RX", .handler = cmdArppoll },
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
@@ -71,6 +75,45 @@ fn cmdHelp(_: []const u8) void {
 
 fn cmdClear(_: []const u8) void {
     vga.vga_writer.clear();
+}
+
+fn cmdAistatus(_: []const u8) void {
+    const state = ai.info();
+    log.kprintln("AI proxy: initialized={s} available={s}", .{
+        if (state.initialized) "yes" else "no",
+        if (state.available) "yes" else "no",
+    });
+    log.kprintln("  prompts={d} responses={d} tx={s} rx={s} response_len={d}", .{
+        state.prompts_sent,
+        state.responses_received,
+        @tagName(state.last_send_status),
+        @tagName(state.last_poll_status),
+        state.response_len,
+    });
+}
+
+fn cmdAiask(args: []const u8) void {
+    const prompt = trimSpaces(args);
+    if (prompt.len == 0) {
+        log.kprintln("Usage: aiask <prompt>", .{});
+        return;
+    }
+
+    const status = ai.sendPrompt(prompt);
+    log.kprintln("aiask: {s}", .{@tagName(status)});
+    if (status == .sent) {
+        log.kprintln("COM2 protocol: ASK <prompt>", .{});
+    }
+}
+
+fn cmdAipoll(_: []const u8) void {
+    const status = ai.pollResponse();
+    log.kprintln("aipoll: {s}", .{@tagName(status)});
+
+    const response = ai.lastResponse();
+    if (response.len > 0) {
+        log.kprintln("AI response: {s}", .{response});
+    }
 }
 
 fn cmdArpreq(args: []const u8) void {
