@@ -2,4 +2,6 @@ zig-out/
 zig-cache/
 .zig-cache/
 *.o
+__pycache__/
+*.pyc
 tools/limine/

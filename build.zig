@@ -49,4 +49,24 @@ pub fn build(b: *std.Build) void {
     qemu_serial_cmd.step.dependOn(&iso_cmd.step);
     const run_serial_step = b.step("run-serial", "Build ISO and run headless in QEMU (serial only)");
     run_serial_step.dependOn(&qemu_serial_cmd.step);
+
+    // --- QEMU run step with COM2 wired to the host-side AI proxy socket ---
+    const qemu_ai_cmd = b.addSystemCommand(&.{
+        "qemu-system-x86_64",
+        "-cdrom",
+        "zig-out/merlionos.iso",
+        "-m",
+        "128M",
+        "-serial",
+        "stdio",
+        "-chardev",
+        "socket,id=ai,path=/tmp/merlionos-ai.sock,server=on,wait=off",
+        "-serial",
+        "chardev:ai",
+        "-no-reboot",
+        "-no-shutdown",
+    });
+    qemu_ai_cmd.step.dependOn(&iso_cmd.step);
+    const run_ai_step = b.step("run-ai", "Build ISO and run QEMU with COM2 AI proxy socket");
+    run_ai_step.dependOn(&qemu_ai_cmd.step);
 }

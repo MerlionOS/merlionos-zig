@@ -21,6 +21,16 @@ brew install zig qemu xorriso
 zig build run    # Build kernel + ISO, launch in QEMU
 ```
 
+For the COM2 AI proxy path:
+
+```bash
+# Terminal 1: boot QEMU with COM2 on a UNIX socket
+zig build run-ai
+
+# Terminal 2: connect the host-side bridge before using aiask/aipoll
+python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock
+```
+
 ## Roadmap
 
 ### Phase 1: Boot + Output
@@ -83,7 +93,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 ### Phase 8: AI Integration (current)
 - [x] COM2 UART plumbing and detection
 - [x] COM2 LLM proxy line protocol commands: `aistatus`, `aiask`, `aipoll`
-- [ ] Host-side COM2 proxy bridge validation
+- [x] Host-side COM2 proxy bridge validation
+- [ ] External LLM-backed host bridge
 
 ## Zig vs Rust: Why Rewrite?
 
