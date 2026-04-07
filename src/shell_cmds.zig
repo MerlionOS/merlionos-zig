@@ -204,6 +204,7 @@ fn cmdNetinfo(_: []const u8) void {
         log.kprintln("No supported Intel e1000-family NIC detected.", .{});
         return;
     };
+    const rings = e1000.ringInfo();
 
     log.kprintln("Driver: e1000-family detection only", .{});
     log.kprintln("Model:  {s}", .{nic.model});
@@ -226,6 +227,20 @@ fn cmdNetinfo(_: []const u8) void {
         nic.mmio_virt,
         nic.ctrl,
         nic.status,
+    });
+    log.kprintln("RX ring: ready={s} descs={d} phys=0x{x:0>8} head={d} tail={d}", .{
+        if (rings.initialized) "yes" else "no",
+        rings.rx_count,
+        rings.rx_desc_phys,
+        rings.rx_head,
+        rings.rx_tail,
+    });
+    log.kprintln("TX ring: ready={s} descs={d} phys=0x{x:0>8} head={d} tail={d}", .{
+        if (rings.initialized) "yes" else "no",
+        rings.tx_count,
+        rings.tx_desc_phys,
+        rings.tx_head,
+        rings.tx_tail,
     });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,

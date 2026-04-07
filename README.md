@@ -70,7 +70,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] e1000/e1000e device detection
 - [x] `netinfo` shell command
 - [x] e1000 BAR0 uncached MMIO mapping + CTRL/STATUS register read
-- [ ] Ethernet frame TX/RX rings
+- [x] e1000 TX/RX DMA descriptor ring initialization
+- [ ] Ethernet frame send/receive path
 - [ ] ARP, IPv4, and ICMP
 
 ### Future
