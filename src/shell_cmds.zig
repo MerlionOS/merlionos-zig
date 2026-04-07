@@ -198,6 +198,8 @@ fn cmdMkdir(args: []const u8) void {
 }
 
 fn cmdNetinfo(_: []const u8) void {
+    e1000.refresh();
+
     const nic = e1000.detected() orelse {
         log.kprintln("No supported Intel e1000-family NIC detected.", .{});
         return;
@@ -217,6 +219,12 @@ fn cmdNetinfo(_: []const u8) void {
         nic.bar0.base,
         @tagName(nic.bar0.kind),
         if (nic.bar0.prefetchable) "yes" else "no",
+    });
+    log.kprintln("MMIO:   mapped={s} virt=0x{x:0>16} CTRL=0x{x:0>8} STATUS=0x{x:0>8}", .{
+        if (nic.mmio_mapped) "yes" else "no",
+        nic.mmio_virt,
+        nic.ctrl,
+        nic.status,
     });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,

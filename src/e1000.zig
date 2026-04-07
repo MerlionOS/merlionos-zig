@@ -1,4 +1,9 @@
 const pci = @import("pci.zig");
+const vmm = @import("vmm.zig");
+
+const MMIO_VIRT_BASE: u64 = 0xFFFF_FFFF_C000_0000;
+const REG_CTRL: u32 = 0x0000;
+const REG_STATUS: u32 = 0x0008;
 
 pub const BarKind = enum {
     none,
@@ -18,6 +23,10 @@ pub const Detection = struct {
     device: *const pci.Device,
     model: []const u8,
     bar0: BarInfo,
+    mmio_mapped: bool,
+    mmio_virt: u64,
+    ctrl: u32,
+    status: u32,
 };
 
 var is_detected: bool = false;
@@ -29,9 +38,17 @@ var detected_bar0: BarInfo = .{
     .kind = .none,
     .prefetchable = false,
 };
+var mmio_mapped: bool = false;
+var mmio_virt: u64 = 0;
+var ctrl: u32 = 0;
+var status: u32 = 0;
 
 pub fn init() void {
     is_detected = false;
+    mmio_mapped = false;
+    mmio_virt = 0;
+    ctrl = 0;
+    status = 0;
 
     for (0..pci.deviceCount()) |i| {
         const device = pci.deviceAt(i) orelse continue;
@@ -40,9 +57,18 @@ pub fn init() void {
         detected_index = i;
         detected_model = model;
         detected_bar0 = decodeBar(device.bar0);
+        mapMmio();
+        refresh();
         is_detected = true;
         return;
     }
+}
+
+pub fn refresh() void {
+    if (!mmio_mapped) return;
+
+    ctrl = readReg32(REG_CTRL);
+    status = readReg32(REG_STATUS);
 }
 
 pub fn detected() ?Detection {
@@ -52,6 +78,10 @@ pub fn detected() ?Detection {
         .device = pci.deviceAt(detected_index) orelse return null,
         .model = detected_model,
         .bar0 = detected_bar0,
+        .mmio_mapped = mmio_mapped,
+        .mmio_virt = mmio_virt,
+        .ctrl = ctrl,
+        .status = status,
     };
 }
 
@@ -68,6 +98,18 @@ pub fn modelName(device: *const pci.Device) ?[]const u8 {
         0x150C => "Intel 82583V (e1000e)",
         else => null,
     };
+}
+
+fn mapMmio() void {
+    if (detected_bar0.kind != .memory32 and detected_bar0.kind != .memory64) return;
+
+    mmio_virt = MMIO_VIRT_BASE;
+    mmio_mapped = vmm.mapPage(mmio_virt, detected_bar0.base, true, false);
+}
+
+fn readReg32(offset: u32) u32 {
+    const ptr: *volatile u32 = @ptrFromInt(mmio_virt + offset);
+    return ptr.*;
 }
 
 fn decodeBar(raw: u32) BarInfo {
