@@ -12,6 +12,7 @@ const pic = @import("pic.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
+const pci = @import("pci.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
 const vfs = @import("vfs.zig");
@@ -110,6 +111,9 @@ export fn _start() callconv(.c) noreturn {
     log.kprintln("[mem] Heap initialized: {s}", .{
         if (heap.isInitialized()) "yes" else "no",
     });
+
+    pci.init();
+    log.kprintln("[pci] Discovered {d} PCI devices", .{pci.deviceCount()});
 
     vfs.init();
     procfs.init();

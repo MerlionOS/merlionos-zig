@@ -56,7 +56,7 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] Scheduler tick accounting
 - [x] Round-robin scheduler (IRQ-time PIT-driven preemption)
 
-### Phase 6: Filesystem (current)
+### Phase 6: Filesystem
 - [x] In-memory VFS (inode-based)
 - [x] /proc (version, uptime, meminfo, tasks)
 - [x] /dev (null, zero)
@@ -64,8 +64,14 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] File commands: ls, tree, cat, mkdir, touch, write, rm, `echo > file`
 - [x] `echo > file` redirection verified end-to-end in QEMU
 
+### Phase 7: Networking (current)
+- [x] PCI bus enumeration
+- [x] `lspci` shell command
+- [ ] e1000e device detection
+- [ ] Ethernet frame TX/RX rings
+- [ ] ARP, IPv4, and ICMP
+
 ### Future
-- [ ] Networking (e1000e + TCP/IP stack)
 - [ ] AI integration (COM2 serial LLM proxy)
 
 ## Zig vs Rust: Why Rewrite?

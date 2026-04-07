@@ -1,4 +1,5 @@
 const log = @import("log.zig");
+const pci = @import("pci.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const procfs = @import("procfs.zig");
@@ -22,6 +23,7 @@ const commands = [_]Command{
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
     .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
     .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
+    .{ .name = "lspci", .description = "List discovered PCI devices", .handler = cmdLspci },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
@@ -139,6 +141,7 @@ fn cmdInfo(_: []const u8) void {
         pmm.freeMemory() / 1048576,
         pmm.totalMemory() / 1048576,
     });
+    log.kprintln("PCI devices: {d}", .{pci.deviceCount()});
     log.kprintln("Tasks: {d} total ({d} runnable)", .{
         task.taskCount(),
         task.runnableCount(),
@@ -209,6 +212,16 @@ fn cmdLs(args: []const u8) void {
     }
 
     vfs.listDir(idx, printDirEntry);
+}
+
+fn cmdLspci(_: []const u8) void {
+    if (pci.deviceCount() == 0) {
+        log.kprintln("No PCI devices discovered.", .{});
+        return;
+    }
+
+    log.kprintln("BUS  DEV  FN  VENDOR DEVICE CLASS SUB PROG  TYPE", .{});
+    pci.forEach(printPciDevice);
 }
 
 fn cmdPwd(_: []const u8) void {
@@ -382,6 +395,20 @@ fn printTaskRow(task_entry: *const task.Task, is_current: bool) void {
         task_entry.priority,
         task.nameSlice(task_entry),
         if (is_current) " *" else "",
+    });
+}
+
+fn printPciDevice(device: *const pci.Device) void {
+    log.kprintln("{x:0>2}   {x:0>2}   {d}   {x:0>4}   {x:0>4}   {x:0>2}    {x:0>2}  {x:0>2}    {s}", .{
+        device.bus,
+        device.slot,
+        device.function,
+        device.vendor_id,
+        device.device_id,
+        device.class_code,
+        device.subclass,
+        device.prog_if,
+        pci.className(device),
     });
 }
 
