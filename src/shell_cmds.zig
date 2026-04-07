@@ -15,6 +15,7 @@ const Command = struct {
 
 const commands = [_]Command{
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
+    .{ .name = "cd", .description = "Change the current directory", .handler = cmdCd },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
     .{ .name = "echo", .description = "Print text or write with > redirection", .handler = cmdEcho },
@@ -23,13 +24,20 @@ const commands = [_]Command{
     .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
+    .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
+    .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
+    .{ .name = "touch", .description = "Create an empty file", .handler = cmdTouch },
+    .{ .name = "tree", .description = "Show a directory tree", .handler = cmdTree },
     .{ .name = "uptime", .description = "Time since boot", .handler = cmdUptime },
     .{ .name = "yield", .description = "Yield the CPU cooperatively", .handler = cmdYield },
     .{ .name = "write", .description = "Write text to a virtual file", .handler = cmdWrite },
     .{ .name = "version", .description = "Kernel version", .handler = cmdVersion },
 };
+
+var current_dir_buf: [MAX_PATH]u8 = [_]u8{'/'} ++ [_]u8{0} ** (MAX_PATH - 1);
+var current_dir_len: usize = 1;
 
 pub fn dispatch(cmd: []const u8, args: []const u8) void {
     for (commands) |command| {
@@ -85,6 +93,25 @@ fn cmdCat(args: []const u8) void {
     if (data[data.len - 1] != '\n') {
         log.kprint("\n", .{});
     }
+}
+
+fn cmdCd(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePathOrRoot(args, &path_buf);
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    const inode = vfs.getInode(idx) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    if (inode.node_type != .directory) {
+        log.kprintln("{s}: not a directory", .{path});
+        return;
+    }
+
+    setCurrentDir(path);
 }
 
 fn cmdEcho(args: []const u8) void {
@@ -184,6 +211,10 @@ fn cmdLs(args: []const u8) void {
     vfs.listDir(idx, printDirEntry);
 }
 
+fn cmdPwd(_: []const u8) void {
+    log.kprintln("{s}", .{currentDir()});
+}
+
 fn cmdPs(_: []const u8) void {
     if (task.taskCount() == 0) {
         log.kprintln("No tasks registered.", .{});
@@ -214,6 +245,70 @@ fn cmdSpawn(args: []const u8) void {
     }
 
     log.kprintln("Failed to spawn task. Task table or stack pool is full.", .{});
+}
+
+fn cmdRm(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePath(args, false, &path_buf) orelse {
+        log.kprintln("Usage: rm <path>", .{});
+        return;
+    };
+
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+
+    if (strEql(path, currentDir())) {
+        log.kprintln("rm: cannot remove the current directory", .{});
+        return;
+    }
+
+    switch (vfs.remove(idx)) {
+        .ok => log.kprintln("Removed {s}.", .{path}),
+        .not_found => log.kprintln("{s}: not found", .{path}),
+        .busy => log.kprintln("rm: cannot remove {s}", .{path}),
+        .not_empty => log.kprintln("rm: directory not empty: {s}", .{path}),
+    }
+}
+
+fn cmdTouch(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePath(args, false, &path_buf) orelse {
+        log.kprintln("Usage: touch <path>", .{});
+        return;
+    };
+
+    switch (touchPath(path)) {
+        .ok => log.kprintln("Touched {s}.", .{path}),
+        .already_exists => log.kprintln("{s}: already exists", .{path}),
+        .invalid_path => log.kprintln("touch: invalid path", .{}),
+        .parent_missing => log.kprintln("touch: parent directory missing", .{}),
+        .parent_not_dir => log.kprintln("touch: parent is not a directory", .{}),
+        .name_invalid => log.kprintln("touch: invalid file name", .{}),
+        .create_failed => log.kprintln("touch: failed to create file", .{}),
+    }
+}
+
+fn cmdTree(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePathOrRoot(args, &path_buf);
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+    const inode = vfs.getInode(idx) orelse {
+        log.kprintln("{s}: not found", .{path});
+        return;
+    };
+
+    if (inode.node_type != .directory) {
+        log.kprintln("{s}", .{path});
+        return;
+    }
+
+    log.kprintln("{s}", .{path});
+    treeDir(idx, 0);
 }
 
 fn cmdUptime(_: []const u8) void {
@@ -317,14 +412,11 @@ fn normalizePathOrRoot(input: []const u8, buffer: *[MAX_PATH]u8) []const u8 {
 fn normalizePath(input: []const u8, allow_root_default: bool, buffer: *[MAX_PATH]u8) ?[]const u8 {
     const trimmed = trimSpaces(input);
     if (trimmed.len == 0) {
-        return if (allow_root_default) "/" else null;
+        if (!allow_root_default) return null;
+        @memcpy(buffer[0..current_dir_len], current_dir_buf[0..current_dir_len]);
+        return buffer[0..current_dir_len];
     }
-    if (trimmed[0] == '/') return trimmed;
-    if (trimmed.len + 1 > buffer.len) return null;
-
-    buffer[0] = '/';
-    @memcpy(buffer[1 .. trimmed.len + 1], trimmed);
-    return buffer[0 .. trimmed.len + 1];
+    return canonicalizePath(trimmed, buffer);
 }
 
 fn parsePid(value: []const u8) ?u32 {
@@ -345,7 +437,65 @@ fn printDirEntry(_: u16, inode: *const vfs.Inode) void {
     });
 }
 
+fn treeDir(dir_idx: u16, depth: usize) void {
+    vfs.listDir(dir_idx, treeEntryCallback(depth));
+}
+
+fn treeEntryCallback(depth: usize) *const fn (u16, *const vfs.Inode) void {
+    return switch (depth) {
+        0 => treeEntryDepth0,
+        1 => treeEntryDepth1,
+        2 => treeEntryDepth2,
+        3 => treeEntryDepth3,
+        else => treeEntryDepth4,
+    };
+}
+
+fn treeEntryDepth0(idx: u16, inode: *const vfs.Inode) void {
+    treeEntry(idx, inode, 0);
+}
+
+fn treeEntryDepth1(idx: u16, inode: *const vfs.Inode) void {
+    treeEntry(idx, inode, 1);
+}
+
+fn treeEntryDepth2(idx: u16, inode: *const vfs.Inode) void {
+    treeEntry(idx, inode, 2);
+}
+
+fn treeEntryDepth3(idx: u16, inode: *const vfs.Inode) void {
+    treeEntry(idx, inode, 3);
+}
+
+fn treeEntryDepth4(idx: u16, inode: *const vfs.Inode) void {
+    treeEntry(idx, inode, 4);
+}
+
+fn treeEntry(idx: u16, inode: *const vfs.Inode, depth: usize) void {
+    for (0..depth) |_| {
+        log.kprint("  ", .{});
+    }
+    log.kprintln("{s}{s}", .{
+        vfs.getName(inode),
+        if (inode.node_type == .directory) "/" else "",
+    });
+
+    if (inode.node_type == .directory) {
+        treeDir(idx, depth + 1);
+    }
+}
+
 const CreateStatus = enum {
+    ok,
+    already_exists,
+    invalid_path,
+    parent_missing,
+    parent_not_dir,
+    name_invalid,
+    create_failed,
+};
+
+const TouchStatus = enum {
     ok,
     already_exists,
     invalid_path,
@@ -382,6 +532,23 @@ fn createDirectory(path: []const u8) CreateStatus {
     if (parent_inode.node_type != .directory) return .parent_not_dir;
 
     if (vfs.createDir(parent_idx, target.name) == null) return .create_failed;
+    return .ok;
+}
+
+fn touchPath(path: []const u8) TouchStatus {
+    if (path.len <= 1) return .invalid_path;
+    if (vfs.resolve(path) != null) return .already_exists;
+
+    var parent_buf: [MAX_PATH]u8 = undefined;
+    const target = splitParent(path, &parent_buf) orelse return .invalid_path;
+    if (target.name.len == 0) return .name_invalid;
+
+    const parent_idx = vfs.resolve(target.parent) orelse return .parent_missing;
+    const parent_inode = vfs.getInode(parent_idx) orelse return .parent_missing;
+    if (parent_inode.node_type != .directory) return .parent_not_dir;
+
+    const file_idx = vfs.createFile(parent_idx, target.name) orelse return .create_failed;
+    if (!vfs.writeFile(file_idx, "")) return .create_failed;
     return .ok;
 }
 
@@ -445,4 +612,69 @@ fn parseEchoRedirect(args: []const u8) ?EchoRedirect {
         }
     }
     return null;
+}
+
+fn currentDir() []const u8 {
+    return current_dir_buf[0..current_dir_len];
+}
+
+fn setCurrentDir(path: []const u8) void {
+    current_dir_len = path.len;
+    @memcpy(current_dir_buf[0..path.len], path);
+}
+
+fn canonicalizePath(input: []const u8, buffer: *[MAX_PATH]u8) ?[]const u8 {
+    var out_len: usize = 0;
+    if (input[0] == '/') {
+        buffer[0] = '/';
+        out_len = 1;
+    } else {
+        @memcpy(buffer[0..current_dir_len], current_dir_buf[0..current_dir_len]);
+        out_len = current_dir_len;
+    }
+
+    var i: usize = 0;
+    while (i < input.len) {
+        while (i < input.len and input[i] == '/') : (i += 1) {}
+        if (i >= input.len) break;
+
+        var end = i;
+        while (end < input.len and input[end] != '/') : (end += 1) {}
+        const part = input[i..end];
+
+        if (strEql(part, ".")) {
+            i = end;
+            continue;
+        }
+        if (strEql(part, "..")) {
+            out_len = parentPathLen(buffer[0..out_len]);
+            i = end;
+            continue;
+        }
+
+        if (out_len > 1) {
+            if (out_len + 1 >= buffer.len) return null;
+            buffer[out_len] = '/';
+            out_len += 1;
+        }
+        if (out_len + part.len >= buffer.len) return null;
+        @memcpy(buffer[out_len .. out_len + part.len], part);
+        out_len += part.len;
+        i = end;
+    }
+
+    if (out_len == 0) {
+        buffer[0] = '/';
+        out_len = 1;
+    }
+    return buffer[0..out_len];
+}
+
+fn parentPathLen(path: []const u8) usize {
+    if (path.len <= 1) return 1;
+
+    var idx = path.len;
+    while (idx > 1 and path[idx - 1] != '/') : (idx -= 1) {}
+    if (idx <= 1) return 1;
+    return idx - 1;
 }

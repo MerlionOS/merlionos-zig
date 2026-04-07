@@ -103,6 +103,23 @@ pub fn listDir(dir_idx: u16, callback: *const fn (u16, *const Inode) void) void 
     }
 }
 
+pub const RemoveStatus = enum {
+    ok,
+    not_found,
+    busy,
+    not_empty,
+};
+
+pub fn remove(idx: u16) RemoveStatus {
+    if (idx == 0) return .busy;
+
+    const inode = getInode(idx) orelse return .not_found;
+    if (inode.node_type == .directory and !isDirEmpty(idx)) return .not_empty;
+
+    inodes[idx] = .{};
+    return .ok;
+}
+
 pub fn getName(inode: *const Inode) []const u8 {
     return inode.name[0..inode.name_len];
 }
@@ -143,6 +160,14 @@ fn findChild(parent: u16, name: []const u8) ?u16 {
         }
     }
     return null;
+}
+
+fn isDirEmpty(dir_idx: u16) bool {
+    for (0..MAX_INODES) |i| {
+        const inode = &inodes[i];
+        if (inode.active and inode.parent == dir_idx and i != dir_idx) return false;
+    }
+    return true;
 }
 
 fn setName(inode: *Inode, name: []const u8) void {
