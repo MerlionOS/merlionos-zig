@@ -49,17 +49,19 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] Commands: help, clear, echo, info, mem, uptime, version
 - [ ] Manual GUI verification for extended keys in QEMU
 
-### Phase 5: Multitasking (current)
+### Phase 5: Multitasking
 - [x] Task management with context switching
 - [x] Cooperative round-robin task switching via `yield`
 - [x] Process commands: ps, spawn, kill
-- [ ] Round-robin scheduler (PIT-driven preemption)
+- [x] Scheduler tick accounting + deferred preemption requests
+- [ ] Round-robin scheduler (IRQ-time PIT-driven preemption)
 
-### Phase 6: Filesystem
-- [ ] In-memory VFS (inode-based)
-- [ ] /proc (uptime, meminfo, tasks)
-- [ ] /dev (null, serial)
-- [ ] File commands: ls, cat, mkdir, echo > file
+### Phase 6: Filesystem (current)
+- [x] In-memory VFS (inode-based)
+- [x] /proc (version, uptime, meminfo, tasks)
+- [x] /dev (null, zero)
+- [x] File commands: ls, cat, mkdir, write
+- [ ] `echo > file` redirection verified end-to-end in QEMU
 
 ### Future
 - [ ] Networking (e1000e + TCP/IP stack)
