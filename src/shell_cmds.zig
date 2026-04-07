@@ -1,3 +1,4 @@
+const arp = @import("arp.zig");
 const e1000 = @import("e1000.zig");
 const log = @import("log.zig");
 const pci = @import("pci.zig");
@@ -16,6 +17,7 @@ const Command = struct {
 };
 
 const commands = [_]Command{
+    .{ .name = "arpreq", .description = "Send an ARP request for an IPv4 address", .handler = cmdArpreq },
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
     .{ .name = "cd", .description = "Change the current directory", .handler = cmdCd },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
@@ -65,6 +67,29 @@ fn cmdHelp(_: []const u8) void {
 
 fn cmdClear(_: []const u8) void {
     vga.vga_writer.clear();
+}
+
+fn cmdArpreq(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const target_ip = if (trimmed.len == 0) arp.DEFAULT_TARGET_IP else parseIpv4(trimmed) orelse {
+        log.kprintln("Usage: arpreq [a.b.c.d]", .{});
+        return;
+    };
+
+    const status = arp.sendRequest(target_ip, arp.DEFAULT_LOCAL_IP);
+    const info = arp.info();
+    log.kprintln("arpreq: {s}", .{@tagName(status)});
+    log.kprintln("ARP who-has {d}.{d}.{d}.{d} tell {d}.{d}.{d}.{d}", .{
+        info.last_target_ip[0],
+        info.last_target_ip[1],
+        info.last_target_ip[2],
+        info.last_target_ip[3],
+        info.last_sender_ip[0],
+        info.last_sender_ip[1],
+        info.last_sender_ip[2],
+        info.last_sender_ip[3],
+    });
+    log.kprintln("ARP requests sent: {d}", .{info.requests_sent});
 }
 
 fn cmdCat(args: []const u8) void {
@@ -263,6 +288,15 @@ fn cmdNetinfo(_: []const u8) void {
         @tagName(rx.last_status),
         rx.last_length,
         rx.last_ethertype,
+    });
+    const arp_info = arp.info();
+    log.kprintln("ARP stats: requests={d} last={s} target={d}.{d}.{d}.{d}", .{
+        arp_info.requests_sent,
+        @tagName(arp_info.last_status),
+        arp_info.last_target_ip[0],
+        arp_info.last_target_ip[1],
+        arp_info.last_target_ip[2],
+        arp_info.last_target_ip[3],
     });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
@@ -568,6 +602,39 @@ fn parsePid(value: []const u8) ?u32 {
         pid = pid * 10 + (ch - '0');
     }
     return pid;
+}
+
+fn parseIpv4(value: []const u8) ?arp.Ipv4 {
+    var out: arp.Ipv4 = undefined;
+    var octet_index: usize = 0;
+    var start: usize = 0;
+
+    while (octet_index < 4) : (octet_index += 1) {
+        var end = start;
+        while (end < value.len and value[end] != '.') : (end += 1) {}
+
+        if (end == start) return null;
+        out[octet_index] = parseU8(value[start..end]) orelse return null;
+
+        if (octet_index == 3) {
+            if (end != value.len) return null;
+        } else {
+            if (end >= value.len or value[end] != '.') return null;
+            start = end + 1;
+        }
+    }
+
+    return out;
+}
+
+fn parseU8(value: []const u8) ?u8 {
+    var result: u16 = 0;
+    for (value) |ch| {
+        if (ch < '0' or ch > '9') return null;
+        result = result * 10 + (ch - '0');
+        if (result > 255) return null;
+    }
+    return @intCast(result);
 }
 
 fn printDirEntry(_: u16, inode: *const vfs.Inode) void {

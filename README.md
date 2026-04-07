@@ -75,7 +75,9 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] Raw Ethernet test-frame TX path
 - [x] Raw Ethernet RX descriptor polling path
 - [ ] Ethernet frame receive with external traffic validation
-- [ ] ARP, IPv4, and ICMP
+- [x] ARP request frame construction and `arpreq`
+- [ ] ARP reply handling
+- [ ] IPv4 and ICMP
 
 ### Future
 - [ ] AI integration (COM2 serial LLM proxy)
