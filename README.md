@@ -80,8 +80,9 @@ zig build run    # Build kernel + ISO, launch in QEMU
 
 ## Documentation
 
-- [Zig vs Rust comparison (中文)](../zig-hello-world/docs/zig-vs-rust-zh.md) | [English](../zig-hello-world/docs/zig-vs-rust-en.md)
-- [Zig OS Development (中文)](../zig-hello-world/docs/zig-os-dev-zh.md) | [English](../zig-hello-world/docs/zig-os-dev-en.md)
+- [Design and implementation plan](docs/DESIGN.md)
+- [Contributor guide](AGENTS.md)
+- [Agent workflow notes](CLAUDE.md)
 
 ## License
 
