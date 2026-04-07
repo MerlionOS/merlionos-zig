@@ -111,7 +111,7 @@ fn cmdAipoll(_: []const u8) void {
     log.kprintln("aipoll: {s}", .{@tagName(status)});
 
     const response = ai.lastResponse();
-    if (response.len > 0) {
+    if ((status == .response_received or status == .partial or status == .response_truncated) and response.len > 0) {
         log.kprintln("AI response: {s}", .{response});
     }
 }

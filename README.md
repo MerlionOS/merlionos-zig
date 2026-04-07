@@ -29,6 +29,10 @@ zig build run-ai
 
 # Terminal 2: connect the host-side bridge before using aiask/aipoll
 python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock
+
+# Optional: delegate prompts to an external LLM CLI or script
+python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
+  --backend command --command 'your-llm-command --read-stdin'
 ```
 
 ## Roadmap
@@ -94,7 +98,8 @@ python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock
 - [x] COM2 UART plumbing and detection
 - [x] COM2 LLM proxy line protocol commands: `aistatus`, `aiask`, `aipoll`
 - [x] Host-side COM2 proxy bridge validation
-- [ ] External LLM-backed host bridge
+- [x] External command-backed host bridge
+- [ ] External LLM provider adapter
 
 ## Zig vs Rust: Why Rewrite?
 

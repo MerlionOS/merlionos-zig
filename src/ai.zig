@@ -40,6 +40,7 @@ var info_state: Info = .{
 
 var response_buf: [MAX_RESPONSE_LEN]u8 = [_]u8{0} ** MAX_RESPONSE_LEN;
 var response_len: usize = 0;
+var response_complete: bool = false;
 
 pub fn init() void {
     serial.com2.init();
@@ -65,6 +66,7 @@ pub fn sendPrompt(prompt: []const u8) SendStatus {
     if (prompt.len > MAX_PROMPT_LEN) return rememberSend(.prompt_too_long);
 
     response_len = 0;
+    response_complete = false;
     info_state.response_len = 0;
     const writer = serial.com2.writer();
     writer.print("ASK {s}\n", .{prompt}) catch {};
@@ -81,6 +83,7 @@ pub fn pollResponse() PollStatus {
         read_any = true;
         if (byte == '\r') continue;
         if (byte == '\n') {
+            response_complete = true;
             info_state.responses_received += 1;
             info_state.response_len = response_len;
             return rememberPoll(.response_received);
@@ -91,10 +94,11 @@ pub fn pollResponse() PollStatus {
         }
         response_buf[response_len] = byte;
         response_len += 1;
+        response_complete = false;
     }
 
     info_state.response_len = response_len;
-    if (read_any or response_len > 0) return rememberPoll(.partial);
+    if (read_any or (response_len > 0 and !response_complete)) return rememberPoll(.partial);
     return rememberPoll(.no_data);
 }
 
