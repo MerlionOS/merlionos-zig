@@ -74,7 +74,7 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] e1000 TX/RX DMA descriptor ring initialization
 - [x] Raw Ethernet test-frame TX path
 - [x] Raw Ethernet RX descriptor polling path
-- [ ] Ethernet frame receive with external traffic validation
+- [x] Ethernet frame receive with external traffic validation
 - [x] ARP request frame construction and `arpreq`
 - [x] ARP reply polling and stats
 - [x] IPv4 + ICMP echo request frame construction

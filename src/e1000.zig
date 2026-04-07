@@ -43,6 +43,7 @@ const TCTL_EN: u32 = 1 << 1;
 const TCTL_PSP: u32 = 1 << 3;
 const TCTL_CT_SHIFT: u5 = 4;
 const TCTL_COLD_SHIFT: u5 = 12;
+const RAH_AV: u32 = 1 << 31;
 
 pub const BarKind = enum {
     none,
@@ -184,8 +185,10 @@ pub fn init() void {
         detected_index = i;
         detected_model = model;
         detected_bar0 = decodeBar(device.bar0);
+        pci.enableMemoryBusMaster(device);
         mapMmio();
         readMacAddress();
+        programReceiveAddress();
         initRings();
         refresh();
         is_detected = true;
@@ -341,6 +344,21 @@ fn readMacAddress() void {
         @truncate(rah >> 8),
     };
     mac_valid = !isZeroMac(mac_addr);
+}
+
+fn programReceiveAddress() void {
+    if (!mmio_mapped or !mac_valid) return;
+
+    const ral = @as(u32, mac_addr[0]) |
+        (@as(u32, mac_addr[1]) << 8) |
+        (@as(u32, mac_addr[2]) << 16) |
+        (@as(u32, mac_addr[3]) << 24);
+    const rah = @as(u32, mac_addr[4]) |
+        (@as(u32, mac_addr[5]) << 8) |
+        RAH_AV;
+
+    writeReg32(REG_RAL0, ral);
+    writeReg32(REG_RAH0, rah);
 }
 
 fn pollReceiveInternal() RxStatus {

@@ -5,6 +5,10 @@ const CONFIG_DATA: u16 = 0xCFC;
 
 pub const MAX_DEVICES = 64;
 
+const COMMAND_IO_SPACE: u16 = 1 << 0;
+const COMMAND_MEMORY_SPACE: u16 = 1 << 1;
+const COMMAND_BUS_MASTER: u16 = 1 << 2;
+
 pub const Device = struct {
     bus: u8,
     slot: u8,
@@ -62,6 +66,16 @@ pub fn forEach(callback: *const fn (*const Device) void) void {
     for (devices[0..count]) |*device| {
         callback(device);
     }
+}
+
+pub fn enableMemoryBusMaster(device: *const Device) void {
+    const command = readConfig16(device.bus, device.slot, device.function, 0x04);
+    writeConfig16(device.bus, device.slot, device.function, 0x04, command | COMMAND_MEMORY_SPACE | COMMAND_BUS_MASTER);
+}
+
+pub fn enableIoBusMaster(device: *const Device) void {
+    const command = readConfig16(device.bus, device.slot, device.function, 0x04);
+    writeConfig16(device.bus, device.slot, device.function, 0x04, command | COMMAND_IO_SPACE | COMMAND_BUS_MASTER);
 }
 
 pub fn className(device: *const Device) []const u8 {
@@ -123,7 +137,26 @@ fn readConfig16(bus: u8, slot: u8, function: u8, offset: u8) u16 {
     return @intCast((readConfig32(bus, slot, function, offset) >> shift) & 0xFFFF);
 }
 
+fn writeConfig16(bus: u8, slot: u8, function: u8, offset: u8, value: u16) void {
+    const shift: u5 = @intCast((offset & 0x02) * 8);
+    const mask = @as(u32, 0xFFFF) << shift;
+    const existing = readConfig32(bus, slot, function, offset);
+    const updated = (existing & ~mask) | (@as(u32, value) << shift);
+    writeConfig32(bus, slot, function, offset, updated);
+}
+
 fn readConfig8(bus: u8, slot: u8, function: u8, offset: u8) u8 {
     const shift: u5 = @intCast((offset & 0x03) * 8);
     return @intCast((readConfig32(bus, slot, function, offset) >> shift) & 0xFF);
+}
+
+fn writeConfig32(bus: u8, slot: u8, function: u8, offset: u8, value: u32) void {
+    const address: u32 = 0x80000000 |
+        (@as(u32, bus) << 16) |
+        (@as(u32, slot) << 11) |
+        (@as(u32, function) << 8) |
+        (@as(u32, offset) & 0xFC);
+
+    cpu.outl(CONFIG_ADDRESS, address);
+    cpu.outl(CONFIG_DATA, value);
 }
