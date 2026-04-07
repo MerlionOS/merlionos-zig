@@ -78,7 +78,7 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] ARP request frame construction and `arpreq`
 - [x] ARP reply polling and stats
 - [x] IPv4 + ICMP echo request frame construction
-- [ ] ICMP echo reply handling
+- [x] ICMP echo reply polling and stats
 
 ### Future
 - [ ] AI integration (COM2 serial LLM proxy)

@@ -34,6 +34,7 @@ const commands = [_]Command{
     .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
     .{ .name = "netrx", .description = "Poll one raw Ethernet RX descriptor", .handler = cmdNetrx },
     .{ .name = "nettest", .description = "Transmit one raw Ethernet test frame", .handler = cmdNettest },
+    .{ .name = "pingpoll", .description = "Poll one ICMP echo reply", .handler = cmdPingpoll },
     .{ .name = "pingtest", .description = "Send one ICMP echo request if ARP is known", .handler = cmdPingtest },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
@@ -324,9 +325,11 @@ fn cmdNetinfo(_: []const u8) void {
         arp_info.last_target_ip[3],
     });
     const icmp_info = icmp.info();
-    log.kprintln("ICMP stats: requests={d} last={s} target={d}.{d}.{d}.{d}", .{
+    log.kprintln("ICMP stats: requests={d} replies={d} tx={s} rx={s} target={d}.{d}.{d}.{d}", .{
         icmp_info.requests_sent,
+        icmp_info.replies_received,
         @tagName(icmp_info.last_status),
+        @tagName(icmp_info.last_poll_status),
         icmp_info.last_target_ip[0],
         icmp_info.last_target_ip[1],
         icmp_info.last_target_ip[2],
@@ -398,6 +401,30 @@ fn cmdPingtest(args: []const u8) void {
     });
     if (status == .no_arp_entry) {
         log.kprintln("Run arpreq/arppoll first to learn the target MAC.", .{});
+    }
+}
+
+fn cmdPingpoll(_: []const u8) void {
+    const status = icmp.pollEchoReply(arp.DEFAULT_LOCAL_IP);
+    const info = icmp.info();
+
+    log.kprintln("pingpoll: {s}", .{@tagName(status)});
+    if (status == .echo_reply_received) {
+        log.kprintln("ICMP reply from {d}.{d}.{d}.{d} seq={d}", .{
+            info.last_reply_ip[0],
+            info.last_reply_ip[1],
+            info.last_reply_ip[2],
+            info.last_reply_ip[3],
+            info.last_reply_sequence,
+        });
+        log.kprintln("  mac={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+            info.last_reply_mac[0],
+            info.last_reply_mac[1],
+            info.last_reply_mac[2],
+            info.last_reply_mac[3],
+            info.last_reply_mac[4],
+            info.last_reply_mac[5],
+        });
     }
 }
 
