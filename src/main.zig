@@ -13,6 +13,7 @@ const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
 const pci = @import("pci.zig");
+const e1000 = @import("e1000.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
 const vfs = @import("vfs.zig");
@@ -114,6 +115,18 @@ export fn _start() callconv(.c) noreturn {
 
     pci.init();
     log.kprintln("[pci] Discovered {d} PCI devices", .{pci.deviceCount()});
+
+    e1000.init();
+    if (e1000.detected()) |nic| {
+        log.kprintln("[net] Detected {s} at {x:0>2}:{x:0>2}.{d}", .{
+            nic.model,
+            nic.device.bus,
+            nic.device.slot,
+            nic.device.function,
+        });
+    } else {
+        log.kprintln("[net] No supported e1000-family NIC detected", .{});
+    }
 
     vfs.init();
     procfs.init();

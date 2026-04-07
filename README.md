@@ -67,7 +67,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 ### Phase 7: Networking (current)
 - [x] PCI bus enumeration
 - [x] `lspci` shell command
-- [ ] e1000e device detection
+- [x] e1000/e1000e device detection
+- [x] `netinfo` shell command
 - [ ] Ethernet frame TX/RX rings
 - [ ] ARP, IPv4, and ICMP
 

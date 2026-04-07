@@ -1,3 +1,4 @@
+const e1000 = @import("e1000.zig");
 const log = @import("log.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
@@ -26,6 +27,7 @@ const commands = [_]Command{
     .{ .name = "lspci", .description = "List discovered PCI devices", .handler = cmdLspci },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
+    .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
@@ -193,6 +195,33 @@ fn cmdMkdir(args: []const u8) void {
         .name_invalid => log.kprintln("mkdir: invalid directory name", .{}),
         .create_failed => log.kprintln("mkdir: failed to create directory", .{}),
     }
+}
+
+fn cmdNetinfo(_: []const u8) void {
+    const nic = e1000.detected() orelse {
+        log.kprintln("No supported Intel e1000-family NIC detected.", .{});
+        return;
+    };
+
+    log.kprintln("Driver: e1000-family detection only", .{});
+    log.kprintln("Model:  {s}", .{nic.model});
+    log.kprintln("PCI:    {x:0>2}:{x:0>2}.{d} vendor={x:0>4} device={x:0>4}", .{
+        nic.device.bus,
+        nic.device.slot,
+        nic.device.function,
+        nic.device.vendor_id,
+        nic.device.device_id,
+    });
+    log.kprintln("BAR0:   raw=0x{x:0>8} base=0x{x:0>8} kind={s} prefetch={s}", .{
+        nic.bar0.raw,
+        nic.bar0.base,
+        @tagName(nic.bar0.kind),
+        if (nic.bar0.prefetchable) "yes" else "no",
+    });
+    log.kprintln("IRQ:    line={d} pin={d}", .{
+        nic.device.interrupt_line,
+        nic.device.interrupt_pin,
+    });
 }
 
 fn cmdLs(args: []const u8) void {

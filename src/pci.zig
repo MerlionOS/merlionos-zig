@@ -16,6 +16,10 @@ pub const Device = struct {
     prog_if: u8,
     revision: u8,
     header_type: u8,
+    bar0: u32,
+    bar1: u32,
+    interrupt_line: u8,
+    interrupt_pin: u8,
 };
 
 var devices: [MAX_DEVICES]Device = undefined;
@@ -47,6 +51,11 @@ pub fn init() void {
 
 pub fn deviceCount() usize {
     return count;
+}
+
+pub fn deviceAt(index: usize) ?*const Device {
+    if (index >= count) return null;
+    return &devices[index];
 }
 
 pub fn forEach(callback: *const fn (*const Device) void) void {
@@ -90,6 +99,10 @@ fn scanFunction(bus: u8, slot: u8, function: u8) void {
         .subclass = readConfig8(bus, slot, function, 0x0A),
         .class_code = readConfig8(bus, slot, function, 0x0B),
         .header_type = readConfig8(bus, slot, function, 0x0E),
+        .bar0 = readConfig32(bus, slot, function, 0x10),
+        .bar1 = readConfig32(bus, slot, function, 0x14),
+        .interrupt_line = readConfig8(bus, slot, function, 0x3C),
+        .interrupt_pin = readConfig8(bus, slot, function, 0x3D),
     };
     count += 1;
 }
