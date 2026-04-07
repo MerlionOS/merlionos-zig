@@ -32,6 +32,8 @@ const TXD_STAT_DD: u8 = 0x01;
 const TXD_CMD_EOP: u8 = 0x01;
 const TXD_CMD_IFCS: u8 = 0x02;
 const TXD_CMD_RS: u8 = 0x08;
+const RXD_STAT_DD: u8 = 0x01;
+const RXD_STAT_EOP: u8 = 0x02;
 const RCTL_EN: u32 = 1 << 1;
 const RCTL_BAM: u32 = 1 << 15;
 const RCTL_SECRC: u32 = 1 << 26;
@@ -72,6 +74,23 @@ pub const TxStatus = enum {
     frame_too_large,
     descriptor_busy,
     timeout,
+};
+
+pub const RxStatus = enum {
+    received,
+    no_packet,
+    not_ready,
+    descriptor_error,
+    truncated,
+};
+
+pub const RxInfo = struct {
+    frames_received: u64,
+    last_status: RxStatus,
+    last_length: u16,
+    last_ethertype: u16,
+    last_src: [6]u8,
+    last_dst: [6]u8,
 };
 
 pub const Detection = struct {
@@ -130,6 +149,8 @@ var rx_buffers: [RX_DESC_COUNT]u64 = [_]u64{0} ** RX_DESC_COUNT;
 var tx_buffers: [TX_DESC_COUNT]u64 = [_]u64{0} ** TX_DESC_COUNT;
 var tx_frames_sent: u64 = 0;
 var tx_last_status: TxStatus = .not_ready;
+var rx_next_index: usize = 0;
+var rx_info: RxInfo = emptyRxInfo();
 
 pub fn init() void {
     is_detected = false;
@@ -143,6 +164,8 @@ pub fn init() void {
     tx_buffers = [_]u64{0} ** TX_DESC_COUNT;
     tx_frames_sent = 0;
     tx_last_status = .not_ready;
+    rx_next_index = 0;
+    rx_info = emptyRxInfo();
 
     for (0..pci.deviceCount()) |i| {
         const device = pci.deviceAt(i) orelse continue;
@@ -192,6 +215,16 @@ pub fn detected() ?Detection {
 
 pub fn ringInfo() *const RingInfo {
     return &rings;
+}
+
+pub fn receiveInfo() *const RxInfo {
+    return &rx_info;
+}
+
+pub fn pollReceive() RxStatus {
+    const result = pollReceiveInternal();
+    rx_info.last_status = result;
+    return result;
 }
 
 pub fn transmitTestFrame() TxStatus {
@@ -273,6 +306,50 @@ fn transmitInternal(frame: []const u8) TxStatus {
 
     refresh();
     return .timeout;
+}
+
+fn pollReceiveInternal() RxStatus {
+    if (!mmio_mapped or !rings.initialized) return .not_ready;
+
+    const desc = rxDesc(rx_next_index);
+    if ((desc.status & RXD_STAT_DD) == 0) {
+        refresh();
+        return .no_packet;
+    }
+
+    memoryBarrier();
+    const length = desc.length;
+    const status_bits = desc.status;
+    const error_bits = desc.errors;
+
+    if (error_bits != 0) {
+        releaseRxDesc(rx_next_index);
+        refresh();
+        return .descriptor_error;
+    }
+
+    if ((status_bits & RXD_STAT_EOP) == 0 or length > RX_BUFFER_SIZE) {
+        releaseRxDesc(rx_next_index);
+        refresh();
+        return .truncated;
+    }
+
+    const buffer: [*]const u8 = @ptrFromInt(pmm.physToVirt(rx_buffers[rx_next_index]));
+    rx_info.last_length = length;
+    if (length >= 14) {
+        @memcpy(rx_info.last_dst[0..], buffer[0..6]);
+        @memcpy(rx_info.last_src[0..], buffer[6..12]);
+        rx_info.last_ethertype = (@as(u16, buffer[12]) << 8) | @as(u16, buffer[13]);
+    } else {
+        rx_info.last_dst = [_]u8{0} ** 6;
+        rx_info.last_src = [_]u8{0} ** 6;
+        rx_info.last_ethertype = 0;
+    }
+    rx_info.frames_received += 1;
+
+    releaseRxDesc(rx_next_index);
+    refresh();
+    return .received;
 }
 
 fn mapMmio() void {
@@ -384,8 +461,37 @@ fn txDesc(index: usize) *volatile TxDesc {
     return &descs[index];
 }
 
+fn rxDesc(index: usize) *volatile RxDesc {
+    const descs: [*]volatile RxDesc = @ptrFromInt(pmm.physToVirt(rings.rx_desc_phys));
+    return &descs[index];
+}
+
+fn releaseRxDesc(index: usize) void {
+    const desc = rxDesc(index);
+    desc.length = 0;
+    desc.checksum = 0;
+    desc.status = 0;
+    desc.errors = 0;
+    desc.special = 0;
+
+    memoryBarrier();
+    writeReg32(REG_RDT, @intCast(index));
+    rx_next_index = (index + 1) % RX_DESC_COUNT;
+}
+
 fn memoryBarrier() void {
     asm volatile ("mfence" ::: .{ .memory = true });
+}
+
+fn emptyRxInfo() RxInfo {
+    return .{
+        .frames_received = 0,
+        .last_status = .not_ready,
+        .last_length = 0,
+        .last_ethertype = 0,
+        .last_src = [_]u8{0} ** 6,
+        .last_dst = [_]u8{0} ** 6,
+    };
 }
 
 fn emptyRingInfo() RingInfo {

@@ -28,6 +28,7 @@ const commands = [_]Command{
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
     .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
+    .{ .name = "netrx", .description = "Poll one raw Ethernet RX descriptor", .handler = cmdNetrx },
     .{ .name = "nettest", .description = "Transmit one raw Ethernet test frame", .handler = cmdNettest },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
@@ -206,6 +207,7 @@ fn cmdNetinfo(_: []const u8) void {
         return;
     };
     const rings = e1000.ringInfo();
+    const rx = e1000.receiveInfo();
 
     log.kprintln("Driver: e1000-family detection only", .{});
     log.kprintln("Model:  {s}", .{nic.model});
@@ -247,10 +249,45 @@ fn cmdNetinfo(_: []const u8) void {
         nic.tx_frames_sent,
         @tagName(nic.tx_last_status),
     });
+    log.kprintln("RX stats: frames={d} last={s} len={d} ethertype=0x{x:0>4}", .{
+        rx.frames_received,
+        @tagName(rx.last_status),
+        rx.last_length,
+        rx.last_ethertype,
+    });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
         nic.device.interrupt_pin,
     });
+}
+
+fn cmdNetrx(_: []const u8) void {
+    const status = e1000.pollReceive();
+    const rx = e1000.receiveInfo();
+
+    log.kprintln("netrx: {s}", .{@tagName(status)});
+    if (status == .received) {
+        log.kprintln("RX frame: len={d} ethertype=0x{x:0>4}", .{
+            rx.last_length,
+            rx.last_ethertype,
+        });
+        log.kprintln("  src={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+            rx.last_src[0],
+            rx.last_src[1],
+            rx.last_src[2],
+            rx.last_src[3],
+            rx.last_src[4],
+            rx.last_src[5],
+        });
+        log.kprintln("  dst={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+            rx.last_dst[0],
+            rx.last_dst[1],
+            rx.last_dst[2],
+            rx.last_dst[3],
+            rx.last_dst[4],
+            rx.last_dst[5],
+        });
+    }
 }
 
 fn cmdNettest(_: []const u8) void {
