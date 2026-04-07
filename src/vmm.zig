@@ -5,7 +5,27 @@ const ENTRIES_PER_TABLE: usize = 512;
 
 const PageTable = [ENTRIES_PER_TABLE]u64;
 
+const FLAG_PRESENT: u64 = 0x001;
+const FLAG_WRITABLE: u64 = 0x002;
+const FLAG_USER: u64 = 0x004;
+const FLAG_WRITE_THROUGH: u64 = 0x008;
+const FLAG_CACHE_DISABLE: u64 = 0x010;
+
+pub const MapFlags = struct {
+    writable: bool = false,
+    user: bool = false,
+    write_through: bool = false,
+    cache_disable: bool = false,
+};
+
 pub fn mapPage(virt: u64, phys: u64, writable: bool, user: bool) bool {
+    return mapPageWithFlags(virt, phys, .{
+        .writable = writable,
+        .user = user,
+    });
+}
+
+pub fn mapPageWithFlags(virt: u64, phys: u64, map_flags: MapFlags) bool {
     const pml4_idx = (virt >> 39) & 0x1FF;
     const pdpt_idx = (virt >> 30) & 0x1FF;
     const pd_idx = (virt >> 21) & 0x1FF;
@@ -18,16 +38,17 @@ pub fn mapPage(virt: u64, phys: u64, writable: bool, user: bool) bool {
     const pd = getOrCreateTable(&pdpt[pdpt_idx]) orelse return false;
     const pt = getOrCreateTable(&pd[pd_idx]) orelse return false;
 
-    var flags: u64 = 0x01;
-    if (writable) flags |= 0x02;
-    if (user) flags |= 0x04;
+    var flags: u64 = FLAG_PRESENT;
+    if (map_flags.writable) flags |= FLAG_WRITABLE;
+    if (map_flags.user) flags |= FLAG_USER;
+    if (map_flags.write_through) flags |= FLAG_WRITE_THROUGH;
+    if (map_flags.cache_disable) flags |= FLAG_CACHE_DISABLE;
     pt[pt_idx] = (phys & 0x000F_FFFF_FFFF_F000) | flags;
 
     asm volatile ("invlpg (%[addr])"
         :
         : [addr] "r" (virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
     return true;
 }
 
@@ -51,8 +72,7 @@ pub fn unmapPage(virt: u64) ?u64 {
     asm volatile ("invlpg (%[addr])"
         :
         : [addr] "r" (virt),
-        : .{ .memory = true }
-    );
+        : .{ .memory = true });
     return entry & 0x000F_FFFF_FFFF_F000;
 }
 

@@ -24,6 +24,7 @@ pub const Detection = struct {
     model: []const u8,
     bar0: BarInfo,
     mmio_mapped: bool,
+    mmio_uncached: bool,
     mmio_virt: u64,
     ctrl: u32,
     status: u32,
@@ -39,6 +40,7 @@ var detected_bar0: BarInfo = .{
     .prefetchable = false,
 };
 var mmio_mapped: bool = false;
+var mmio_uncached: bool = false;
 var mmio_virt: u64 = 0;
 var ctrl: u32 = 0;
 var status: u32 = 0;
@@ -46,6 +48,7 @@ var status: u32 = 0;
 pub fn init() void {
     is_detected = false;
     mmio_mapped = false;
+    mmio_uncached = false;
     mmio_virt = 0;
     ctrl = 0;
     status = 0;
@@ -79,6 +82,7 @@ pub fn detected() ?Detection {
         .model = detected_model,
         .bar0 = detected_bar0,
         .mmio_mapped = mmio_mapped,
+        .mmio_uncached = mmio_uncached,
         .mmio_virt = mmio_virt,
         .ctrl = ctrl,
         .status = status,
@@ -104,7 +108,12 @@ fn mapMmio() void {
     if (detected_bar0.kind != .memory32 and detected_bar0.kind != .memory64) return;
 
     mmio_virt = MMIO_VIRT_BASE;
-    mmio_mapped = vmm.mapPage(mmio_virt, detected_bar0.base, true, false);
+    mmio_mapped = vmm.mapPageWithFlags(mmio_virt, detected_bar0.base, .{
+        .writable = true,
+        .write_through = true,
+        .cache_disable = true,
+    });
+    mmio_uncached = mmio_mapped;
 }
 
 fn readReg32(offset: u32) u32 {

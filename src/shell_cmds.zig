@@ -220,8 +220,9 @@ fn cmdNetinfo(_: []const u8) void {
         @tagName(nic.bar0.kind),
         if (nic.bar0.prefetchable) "yes" else "no",
     });
-    log.kprintln("MMIO:   mapped={s} virt=0x{x:0>16} CTRL=0x{x:0>8} STATUS=0x{x:0>8}", .{
+    log.kprintln("MMIO:   mapped={s} cache={s} virt=0x{x:0>16} CTRL=0x{x:0>8} STATUS=0x{x:0>8}", .{
         if (nic.mmio_mapped) "yes" else "no",
+        if (nic.mmio_uncached) "uncached" else "default",
         nic.mmio_virt,
         nic.ctrl,
         nic.status,

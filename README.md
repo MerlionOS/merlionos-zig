@@ -69,7 +69,7 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] `lspci` shell command
 - [x] e1000/e1000e device detection
 - [x] `netinfo` shell command
-- [x] e1000 BAR0 MMIO mapping + CTRL/STATUS register read
+- [x] e1000 BAR0 uncached MMIO mapping + CTRL/STATUS register read
 - [ ] Ethernet frame TX/RX rings
 - [ ] ARP, IPv4, and ICMP
 
