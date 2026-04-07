@@ -18,6 +18,7 @@ const Command = struct {
 
 const commands = [_]Command{
     .{ .name = "arpreq", .description = "Send an ARP request for an IPv4 address", .handler = cmdArpreq },
+    .{ .name = "arppoll", .description = "Poll one ARP reply from RX", .handler = cmdArppoll },
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
     .{ .name = "cd", .description = "Change the current directory", .handler = cmdCd },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
@@ -90,6 +91,26 @@ fn cmdArpreq(args: []const u8) void {
         info.last_sender_ip[3],
     });
     log.kprintln("ARP requests sent: {d}", .{info.requests_sent});
+}
+
+fn cmdArppoll(_: []const u8) void {
+    const status = arp.pollReply();
+    const info = arp.info();
+    log.kprintln("arppoll: {s}", .{@tagName(status)});
+    if (status == .reply_received) {
+        log.kprintln("ARP reply: {d}.{d}.{d}.{d} is-at {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+            info.last_reply_ip[0],
+            info.last_reply_ip[1],
+            info.last_reply_ip[2],
+            info.last_reply_ip[3],
+            info.last_reply_mac[0],
+            info.last_reply_mac[1],
+            info.last_reply_mac[2],
+            info.last_reply_mac[3],
+            info.last_reply_mac[4],
+            info.last_reply_mac[5],
+        });
+    }
 }
 
 fn cmdCat(args: []const u8) void {
@@ -290,9 +311,11 @@ fn cmdNetinfo(_: []const u8) void {
         rx.last_ethertype,
     });
     const arp_info = arp.info();
-    log.kprintln("ARP stats: requests={d} last={s} target={d}.{d}.{d}.{d}", .{
+    log.kprintln("ARP stats: requests={d} replies={d} tx={s} rx={s} target={d}.{d}.{d}.{d}", .{
         arp_info.requests_sent,
+        arp_info.replies_received,
         @tagName(arp_info.last_status),
+        @tagName(arp_info.last_poll_status),
         arp_info.last_target_ip[0],
         arp_info.last_target_ip[1],
         arp_info.last_target_ip[2],

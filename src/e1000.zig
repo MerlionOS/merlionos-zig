@@ -155,6 +155,7 @@ var tx_frames_sent: u64 = 0;
 var tx_last_status: TxStatus = .not_ready;
 var rx_next_index: usize = 0;
 var rx_info: RxInfo = emptyRxInfo();
+var last_rx_frame: [RX_BUFFER_SIZE]u8 = [_]u8{0} ** RX_BUFFER_SIZE;
 var mac_valid: bool = false;
 var mac_addr: [6]u8 = [_]u8{0} ** 6;
 
@@ -172,6 +173,7 @@ pub fn init() void {
     tx_last_status = .not_ready;
     rx_next_index = 0;
     rx_info = emptyRxInfo();
+    last_rx_frame = [_]u8{0} ** RX_BUFFER_SIZE;
     mac_valid = false;
     mac_addr = [_]u8{0} ** 6;
 
@@ -230,6 +232,11 @@ pub fn ringInfo() *const RingInfo {
 
 pub fn receiveInfo() *const RxInfo {
     return &rx_info;
+}
+
+pub fn lastRxFrame() []const u8 {
+    const len: usize = @intCast(rx_info.last_length);
+    return last_rx_frame[0..len];
 }
 
 pub fn pollReceive() RxStatus {
@@ -364,6 +371,8 @@ fn pollReceiveInternal() RxStatus {
 
     const buffer: [*]const u8 = @ptrFromInt(pmm.physToVirt(rx_buffers[rx_next_index]));
     rx_info.last_length = length;
+    const length_usize: usize = @intCast(length);
+    @memcpy(last_rx_frame[0..length_usize], buffer[0..length_usize]);
     if (length >= 14) {
         @memcpy(rx_info.last_dst[0..], buffer[0..6]);
         @memcpy(rx_info.last_src[0..], buffer[6..12]);
