@@ -60,8 +60,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] In-memory VFS (inode-based)
 - [x] /proc (version, uptime, meminfo, tasks)
 - [x] /dev (null, zero)
-- [x] File commands: ls, cat, mkdir, write
-- [ ] `echo > file` redirection verified end-to-end in QEMU
+- [x] File commands: ls, cat, mkdir, write, `echo > file`
+- [x] `echo > file` redirection verified end-to-end in QEMU
 
 ### Future
 - [ ] Networking (e1000e + TCP/IP stack)
