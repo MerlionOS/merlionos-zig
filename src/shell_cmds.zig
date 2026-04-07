@@ -28,6 +28,7 @@ const commands = [_]Command{
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
     .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
+    .{ .name = "nettest", .description = "Transmit one raw Ethernet test frame", .handler = cmdNettest },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
@@ -242,10 +243,23 @@ fn cmdNetinfo(_: []const u8) void {
         rings.tx_head,
         rings.tx_tail,
     });
+    log.kprintln("TX stats: frames={d} last={s}", .{
+        nic.tx_frames_sent,
+        @tagName(nic.tx_last_status),
+    });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
         nic.device.interrupt_pin,
     });
+}
+
+fn cmdNettest(_: []const u8) void {
+    const status = e1000.transmitTestFrame();
+    e1000.refresh();
+
+    const rings = e1000.ringInfo();
+    log.kprintln("nettest: {s}", .{@tagName(status)});
+    log.kprintln("TX ring: head={d} tail={d}", .{ rings.tx_head, rings.tx_tail });
 }
 
 fn cmdLs(args: []const u8) void {

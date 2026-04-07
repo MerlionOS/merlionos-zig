@@ -25,8 +25,13 @@ const RX_DESC_COUNT: usize = 8;
 const TX_DESC_COUNT: usize = 8;
 const RX_BUFFER_SIZE: u16 = 2048;
 const TX_BUFFER_SIZE: u16 = 2048;
+const MIN_ETH_FRAME_SIZE: usize = 60;
+const TX_COMPLETE_POLL_LIMIT: usize = 100_000;
 
 const TXD_STAT_DD: u8 = 0x01;
+const TXD_CMD_EOP: u8 = 0x01;
+const TXD_CMD_IFCS: u8 = 0x02;
+const TXD_CMD_RS: u8 = 0x08;
 const RCTL_EN: u32 = 1 << 1;
 const RCTL_BAM: u32 = 1 << 15;
 const RCTL_SECRC: u32 = 1 << 26;
@@ -61,6 +66,14 @@ pub const RingInfo = struct {
     tx_tail: u32,
 };
 
+pub const TxStatus = enum {
+    sent,
+    not_ready,
+    frame_too_large,
+    descriptor_busy,
+    timeout,
+};
+
 pub const Detection = struct {
     device: *const pci.Device,
     model: []const u8,
@@ -70,6 +83,8 @@ pub const Detection = struct {
     mmio_virt: u64,
     ctrl: u32,
     status: u32,
+    tx_frames_sent: u64,
+    tx_last_status: TxStatus,
 };
 
 const RxDesc = extern struct {
@@ -113,6 +128,8 @@ var status: u32 = 0;
 var rings: RingInfo = emptyRingInfo();
 var rx_buffers: [RX_DESC_COUNT]u64 = [_]u64{0} ** RX_DESC_COUNT;
 var tx_buffers: [TX_DESC_COUNT]u64 = [_]u64{0} ** TX_DESC_COUNT;
+var tx_frames_sent: u64 = 0;
+var tx_last_status: TxStatus = .not_ready;
 
 pub fn init() void {
     is_detected = false;
@@ -124,6 +141,8 @@ pub fn init() void {
     rings = emptyRingInfo();
     rx_buffers = [_]u64{0} ** RX_DESC_COUNT;
     tx_buffers = [_]u64{0} ** TX_DESC_COUNT;
+    tx_frames_sent = 0;
+    tx_last_status = .not_ready;
 
     for (0..pci.deviceCount()) |i| {
         const device = pci.deviceAt(i) orelse continue;
@@ -166,11 +185,36 @@ pub fn detected() ?Detection {
         .mmio_virt = mmio_virt,
         .ctrl = ctrl,
         .status = status,
+        .tx_frames_sent = tx_frames_sent,
+        .tx_last_status = tx_last_status,
     };
 }
 
 pub fn ringInfo() *const RingInfo {
     return &rings;
+}
+
+pub fn transmitTestFrame() TxStatus {
+    var frame: [MIN_ETH_FRAME_SIZE]u8 = undefined;
+    @memset(frame[0..], 0);
+
+    const dst = [_]u8{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    const src = [_]u8{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    const payload = "MerlionOS-Zig e1000 TX test";
+
+    @memcpy(frame[0..6], dst[0..]);
+    @memcpy(frame[6..12], src[0..]);
+    frame[12] = 0x88;
+    frame[13] = 0xb5;
+    @memcpy(frame[14 .. 14 + payload.len], payload);
+
+    return transmit(frame[0..]);
+}
+
+pub fn transmit(frame: []const u8) TxStatus {
+    const result = transmitInternal(frame);
+    tx_last_status = result;
+    return result;
 }
 
 pub fn modelName(device: *const pci.Device) ?[]const u8 {
@@ -186,6 +230,49 @@ pub fn modelName(device: *const pci.Device) ?[]const u8 {
         0x150C => "Intel 82583V (e1000e)",
         else => null,
     };
+}
+
+fn transmitInternal(frame: []const u8) TxStatus {
+    if (!mmio_mapped or !rings.initialized) return .not_ready;
+    if (frame.len > TX_BUFFER_SIZE) return .frame_too_large;
+
+    const tail = readReg32(REG_TDT);
+    if (tail >= TX_DESC_COUNT) return .not_ready;
+
+    const index: usize = @intCast(tail);
+    const next_tail: u32 = @intCast((index + 1) % TX_DESC_COUNT);
+    if (next_tail == readReg32(REG_TDH)) return .descriptor_busy;
+
+    const desc = txDesc(index);
+
+    const buffer: [*]u8 = @ptrFromInt(pmm.physToVirt(tx_buffers[index]));
+    const frame_len = if (frame.len < MIN_ETH_FRAME_SIZE) MIN_ETH_FRAME_SIZE else frame.len;
+    @memcpy(buffer[0..frame.len], frame);
+    if (frame_len > frame.len) {
+        @memset(buffer[frame.len..frame_len], 0);
+    }
+
+    desc.addr = tx_buffers[index];
+    desc.length = @intCast(frame_len);
+    desc.cso = 0;
+    desc.cmd = TXD_CMD_EOP | TXD_CMD_IFCS | TXD_CMD_RS;
+    desc.status = 0;
+    desc.css = 0;
+    desc.special = 0;
+
+    memoryBarrier();
+    writeReg32(REG_TDT, next_tail);
+
+    for (0..TX_COMPLETE_POLL_LIMIT) |_| {
+        if ((desc.status & TXD_STAT_DD) != 0 or readReg32(REG_TDH) == next_tail) {
+            tx_frames_sent += 1;
+            refresh();
+            return .sent;
+        }
+    }
+
+    refresh();
+    return .timeout;
 }
 
 fn mapMmio() void {
@@ -290,6 +377,15 @@ fn readReg32(offset: u32) u32 {
 fn writeReg32(offset: u32, value: u32) void {
     const ptr: *volatile u32 = @ptrFromInt(mmio_virt + offset);
     ptr.* = value;
+}
+
+fn txDesc(index: usize) *volatile TxDesc {
+    const descs: [*]volatile TxDesc = @ptrFromInt(pmm.physToVirt(rings.tx_desc_phys));
+    return &descs[index];
+}
+
+fn memoryBarrier() void {
+    asm volatile ("mfence" ::: .{ .memory = true });
 }
 
 fn emptyRingInfo() RingInfo {
