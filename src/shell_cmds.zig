@@ -1,5 +1,6 @@
 const arp = @import("arp.zig");
 const e1000 = @import("e1000.zig");
+const icmp = @import("icmp.zig");
 const log = @import("log.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
@@ -33,6 +34,7 @@ const commands = [_]Command{
     .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
     .{ .name = "netrx", .description = "Poll one raw Ethernet RX descriptor", .handler = cmdNetrx },
     .{ .name = "nettest", .description = "Transmit one raw Ethernet test frame", .handler = cmdNettest },
+    .{ .name = "pingtest", .description = "Send one ICMP echo request if ARP is known", .handler = cmdPingtest },
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
@@ -321,6 +323,15 @@ fn cmdNetinfo(_: []const u8) void {
         arp_info.last_target_ip[2],
         arp_info.last_target_ip[3],
     });
+    const icmp_info = icmp.info();
+    log.kprintln("ICMP stats: requests={d} last={s} target={d}.{d}.{d}.{d}", .{
+        icmp_info.requests_sent,
+        @tagName(icmp_info.last_status),
+        icmp_info.last_target_ip[0],
+        icmp_info.last_target_ip[1],
+        icmp_info.last_target_ip[2],
+        icmp_info.last_target_ip[3],
+    });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
         nic.device.interrupt_pin,
@@ -363,6 +374,31 @@ fn cmdNettest(_: []const u8) void {
     const rings = e1000.ringInfo();
     log.kprintln("nettest: {s}", .{@tagName(status)});
     log.kprintln("TX ring: head={d} tail={d}", .{ rings.tx_head, rings.tx_tail });
+}
+
+fn cmdPingtest(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const target_ip = if (trimmed.len == 0) arp.DEFAULT_TARGET_IP else parseIpv4(trimmed) orelse {
+        log.kprintln("Usage: pingtest [a.b.c.d]", .{});
+        return;
+    };
+
+    const status = icmp.sendEchoRequest(target_ip, arp.DEFAULT_LOCAL_IP);
+    const info = icmp.info();
+    log.kprintln("pingtest: {s}", .{@tagName(status)});
+    log.kprintln("ICMP echo {d}.{d}.{d}.{d} -> {d}.{d}.{d}.{d}", .{
+        info.last_source_ip[0],
+        info.last_source_ip[1],
+        info.last_source_ip[2],
+        info.last_source_ip[3],
+        info.last_target_ip[0],
+        info.last_target_ip[1],
+        info.last_target_ip[2],
+        info.last_target_ip[3],
+    });
+    if (status == .no_arp_entry) {
+        log.kprintln("Run arpreq/arppoll first to learn the target MAC.", .{});
+    }
 }
 
 fn cmdLs(args: []const u8) void {
