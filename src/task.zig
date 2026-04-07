@@ -1,7 +1,10 @@
+const gdt = @import("gdt.zig");
+
 pub const MAX_TASKS = 32;
 const MAX_NAME = 32;
 const STACK_SIZE = 16384;
 const STACK_CANARY: u64 = 0xDEAD_BEEF_CAFE_BABE;
+const INITIAL_RFLAGS: u64 = 0x202;
 
 pub const TaskState = enum {
     ready,
@@ -33,7 +36,8 @@ pub const KillResult = enum {
 
 pub const TaskEntryFn = *const fn () callconv(.c) noreturn;
 
-pub extern fn contextSwitch(old_rsp: *volatile u64, new_rsp: u64) void;
+pub extern fn yieldCurrent() void;
+pub extern fn taskBootstrap() callconv(.c) noreturn;
 
 var tasks: [MAX_TASKS]?Task = [_]?Task{null} ** MAX_TASKS;
 var current_task_index: ?usize = null;
@@ -221,20 +225,34 @@ fn setName(task_entry: *Task, value: []const u8) void {
 fn buildInitialStack(stack_top: u64, entry_fn: TaskEntryFn) u64 {
     var sp = stack_top;
 
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = @intFromPtr(entry_fn);
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
-    sp -= 8;
-    @as(*u64, @ptrFromInt(sp)).* = 0;
+    // The interrupt restore path pops 15 GPRs, then iretq consumes RIP/CS/RFLAGS.
+    // Keep RSP/SS slots too so the first synthetic return has a valid stack.
+    pushStack(&sp, gdt.KERNEL_DATA_SEL); // ss
+    pushStack(&sp, stack_top); // rsp
+    pushStack(&sp, INITIAL_RFLAGS);
+    pushStack(&sp, gdt.KERNEL_CODE_SEL);
+    pushStack(&sp, @intFromPtr(&taskBootstrap));
+
+    pushStack(&sp, 0); // rax
+    pushStack(&sp, 0); // rbx
+    pushStack(&sp, 0); // rcx
+    pushStack(&sp, 0); // rdx
+    pushStack(&sp, 0); // rbp
+    pushStack(&sp, 0); // rsi
+    pushStack(&sp, 0); // rdi
+    pushStack(&sp, 0); // r8
+    pushStack(&sp, 0); // r9
+    pushStack(&sp, 0); // r10
+    pushStack(&sp, 0); // r11
+    pushStack(&sp, @intFromPtr(entry_fn)); // r12
+    pushStack(&sp, stack_top); // r13
+    pushStack(&sp, 0); // r14
+    pushStack(&sp, 0); // r15
 
     return sp;
+}
+
+fn pushStack(sp: *u64, value: u64) void {
+    sp.* -= 8;
+    @as(*u64, @ptrFromInt(sp.*)).* = value;
 }

@@ -1,19 +1,23 @@
 .text
-.globl contextSwitch
-.type contextSwitch, @function
-contextSwitch:
-    push %rbx
-    push %rbp
-    push %r12
-    push %r13
-    push %r14
-    push %r15
-    mov %rsp, (%rdi)
-    mov %rsi, %rsp
-    pop %r15
-    pop %r14
-    pop %r13
-    pop %r12
-    pop %rbp
-    pop %rbx
+.globl yieldCurrent
+.type yieldCurrent, @function
+yieldCurrent:
+    int $0x81
     ret
+
+.globl taskBootstrap
+.type taskBootstrap, @function
+taskBootstrap:
+    mov %r13, %rsp
+    call *%r12
+1:
+    cli
+    hlt
+    jmp 1b
+
+.globl backgroundWorkerLoop
+.type backgroundWorkerLoop, @function
+backgroundWorkerLoop:
+1:
+    pause
+    jmp 1b

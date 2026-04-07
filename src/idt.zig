@@ -41,6 +41,7 @@ pub fn init() void {
     idt[32] = makeGate(@ptrCast(&irq0Stub), 0, 0x8E);
     idt[33] = makeGate(@ptrCast(&irq1Stub), 0, 0x8E);
     idt[0x80] = makeGate(@ptrCast(&syscallStub), 0, 0xEE);
+    idt[0x81] = makeGate(@ptrCast(&yieldStub), 0, 0x8E);
 
     const idtr = cpu.IdtRegister{
         .limit = @sizeOf(@TypeOf(idt)) - 1,
@@ -98,10 +99,10 @@ export fn pageFaultInner() void {
     cpu.halt();
 }
 
-export fn irq0Inner() void {
+export fn irq0Inner(current_rsp: u64) callconv(.c) u64 {
     pit.tick();
-    scheduler.timerTick();
     pic.sendEoi(0);
+    return scheduler.timerTickFromContext(current_rsp);
 }
 
 export fn irq1Inner() void {
@@ -111,6 +112,10 @@ export fn irq1Inner() void {
 
 export fn syscallInner() void {
     log.kprintln("[sys] int 0x80", .{});
+}
+
+export fn yieldInner(current_rsp: u64) callconv(.c) u64 {
+    return scheduler.yieldFromContext(current_rsp);
 }
 
 fn defaultInterruptStub() callconv(.naked) void {
@@ -146,7 +151,7 @@ fn pageFaultStub() callconv(.naked) void {
 }
 
 fn irq0Stub() callconv(.naked) void {
-    asm volatile (pushRegsAndCall("irq0Inner", false));
+    asm volatile (pushFullRegsAndSwitch("irq0Inner"));
 }
 
 fn irq1Stub() callconv(.naked) void {
@@ -155,6 +160,10 @@ fn irq1Stub() callconv(.naked) void {
 
 fn syscallStub() callconv(.naked) void {
     asm volatile (pushRegsAndCall("syscallInner", false));
+}
+
+fn yieldStub() callconv(.naked) void {
+    asm volatile (pushFullRegsAndSwitch("yieldInner"));
 }
 
 fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) []const u8 {
@@ -210,4 +219,41 @@ fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) [
     \\popq %%rax
     \\iretq
     ;
+}
+
+fn pushFullRegsAndSwitch(comptime target: []const u8) []const u8 {
+    return "pushq %%rax\n" ++
+        "pushq %%rbx\n" ++
+        "pushq %%rcx\n" ++
+        "pushq %%rdx\n" ++
+        "pushq %%rbp\n" ++
+        "pushq %%rsi\n" ++
+        "pushq %%rdi\n" ++
+        "pushq %%r8\n" ++
+        "pushq %%r9\n" ++
+        "pushq %%r10\n" ++
+        "pushq %%r11\n" ++
+        "pushq %%r12\n" ++
+        "pushq %%r13\n" ++
+        "pushq %%r14\n" ++
+        "pushq %%r15\n" ++
+        "movq %%rsp, %%rdi\n" ++
+        "call " ++ target ++ "\n" ++
+        "movq %%rax, %%rsp\n" ++
+        "popq %%r15\n" ++
+        "popq %%r14\n" ++
+        "popq %%r13\n" ++
+        "popq %%r12\n" ++
+        "popq %%r11\n" ++
+        "popq %%r10\n" ++
+        "popq %%r9\n" ++
+        "popq %%r8\n" ++
+        "popq %%rdi\n" ++
+        "popq %%rsi\n" ++
+        "popq %%rbp\n" ++
+        "popq %%rdx\n" ++
+        "popq %%rcx\n" ++
+        "popq %%rbx\n" ++
+        "popq %%rax\n" ++
+        "iretq\n";
 }

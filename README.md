@@ -53,8 +53,8 @@ zig build run    # Build kernel + ISO, launch in QEMU
 - [x] Task management with context switching
 - [x] Cooperative round-robin task switching via `yield`
 - [x] Process commands: ps, spawn, kill
-- [x] Scheduler tick accounting + deferred preemption requests
-- [ ] Round-robin scheduler (IRQ-time PIT-driven preemption)
+- [x] Scheduler tick accounting
+- [x] Round-robin scheduler (IRQ-time PIT-driven preemption)
 
 ### Phase 6: Filesystem (current)
 - [x] In-memory VFS (inode-based)

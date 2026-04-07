@@ -143,7 +143,7 @@ fn cmdInfo(_: []const u8) void {
         task.taskCount(),
         task.runnableCount(),
     });
-    log.kprintln("Scheduler: cooperative, quantum={d}, switches={d}", .{
+    log.kprintln("Scheduler: IRQ-time round-robin, quantum={d}, switches={d}", .{
         scheduler.getQuantum(),
         scheduler.getContextSwitches(),
     });

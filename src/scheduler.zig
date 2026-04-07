@@ -1,6 +1,7 @@
 const task = @import("task.zig");
 
 pub const DEFAULT_QUANTUM: u64 = 10;
+pub extern fn backgroundWorkerLoop() callconv(.c) noreturn;
 
 var tick_count: u64 = 0;
 var quantum: u64 = DEFAULT_QUANTUM;
@@ -20,56 +21,42 @@ pub fn init() void {
     preempt_pending = false;
 }
 
-pub fn timerTick() void {
+pub fn timerTickFromContext(current_rsp: u64) callconv(.c) u64 {
     tick_count += 1;
     task.accountCurrentTick();
 
     if (quantum != 0 and tick_count % quantum == 0) {
         time_slice_expirations += 1;
         if (task.runnableCount() > 1) {
-            preempt_pending = true;
             preempt_requests += 1;
+            preempt_pending = false;
+            return switchFromContext(current_rsp);
         }
     }
+
+    return current_rsp;
 }
 
 pub fn spawnWorker(name: []const u8) ?u32 {
-    return task.spawn(name, backgroundWorkerMain);
+    return task.spawn(name, backgroundWorkerLoop);
 }
 
-pub fn schedule() bool {
-    const current_index = task.getCurrentIndex() orelse return false;
-    const next_index = task.findNextRunnable(current_index) orelse return false;
-
-    const old_task = task.getTask(current_index) orelse return false;
-    const new_task = task.getTask(next_index) orelse return false;
-
-    if (old_task.state == .running) {
-        old_task.state = .ready;
-    }
-    new_task.state = .running;
-
-    const old_rsp: *volatile u64 = &old_task.rsp;
-    const new_rsp = new_task.rsp;
-
-    task.setCurrentIndex(next_index);
-    new_task.run_count += 1;
-    context_switches += 1;
-    task.contextSwitch(old_rsp, new_rsp);
-    return true;
+pub export fn yieldFromContext(current_rsp: u64) callconv(.c) u64 {
+    return switchFromContext(current_rsp);
 }
 
 pub fn yield() bool {
+    if (task.runnableCount() <= 1) return false;
+
     yield_requests += 1;
     task.noteCurrentYield();
     preempt_pending = false;
-    return schedule();
+    task.yieldCurrent();
+    return true;
 }
 
 pub fn preemptIfNeeded() bool {
-    if (!preempt_pending) return false;
-    preempt_pending = false;
-    return schedule();
+    return false;
 }
 
 pub fn getTickCount() u64 {
@@ -100,9 +87,22 @@ pub fn hasPreemptPending() bool {
     return preempt_pending;
 }
 
-fn backgroundWorkerMain() callconv(.c) noreturn {
-    while (true) {
-        _ = preemptIfNeeded();
-        asm volatile ("pause");
+fn switchFromContext(current_rsp: u64) u64 {
+    const current_index = task.getCurrentIndex() orelse return current_rsp;
+    const next_index = task.findNextRunnable(current_index) orelse return current_rsp;
+
+    const old_task = task.getTask(current_index) orelse return current_rsp;
+    const new_task = task.getTask(next_index) orelse return current_rsp;
+
+    if (old_task.state == .running) {
+        old_task.state = .ready;
     }
+    old_task.rsp = current_rsp;
+
+    new_task.state = .running;
+    task.setCurrentIndex(next_index);
+    new_task.run_count += 1;
+    context_switches += 1;
+
+    return new_task.rsp;
 }
