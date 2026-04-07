@@ -224,6 +224,15 @@ fn cmdNetinfo(_: []const u8) void {
         @tagName(nic.bar0.kind),
         if (nic.bar0.prefetchable) "yes" else "no",
     });
+    log.kprintln("MAC:    {s} {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+        if (nic.mac_valid) "valid" else "unknown",
+        nic.mac[0],
+        nic.mac[1],
+        nic.mac[2],
+        nic.mac[3],
+        nic.mac[4],
+        nic.mac[5],
+    });
     log.kprintln("MMIO:   mapped={s} cache={s} virt=0x{x:0>16} CTRL=0x{x:0>8} STATUS=0x{x:0>8}", .{
         if (nic.mmio_mapped) "yes" else "no",
         if (nic.mmio_uncached) "uncached" else "default",

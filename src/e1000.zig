@@ -3,7 +3,7 @@ const pmm = @import("pmm.zig");
 const vmm = @import("vmm.zig");
 
 const MMIO_VIRT_BASE: u64 = 0xFFFF_FFFF_C000_0000;
-const MMIO_MAP_SIZE: u64 = 0x4000;
+const MMIO_MAP_SIZE: u64 = 0x6000;
 const REG_CTRL: u32 = 0x0000;
 const REG_STATUS: u32 = 0x0008;
 const REG_IMC: u32 = 0x00D8;
@@ -20,6 +20,8 @@ const REG_TDBAH: u32 = 0x3804;
 const REG_TDLEN: u32 = 0x3808;
 const REG_TDH: u32 = 0x3810;
 const REG_TDT: u32 = 0x3818;
+const REG_RAL0: u32 = 0x5400;
+const REG_RAH0: u32 = 0x5404;
 
 const RX_DESC_COUNT: usize = 8;
 const TX_DESC_COUNT: usize = 8;
@@ -104,6 +106,8 @@ pub const Detection = struct {
     status: u32,
     tx_frames_sent: u64,
     tx_last_status: TxStatus,
+    mac_valid: bool,
+    mac: [6]u8,
 };
 
 const RxDesc = extern struct {
@@ -151,6 +155,8 @@ var tx_frames_sent: u64 = 0;
 var tx_last_status: TxStatus = .not_ready;
 var rx_next_index: usize = 0;
 var rx_info: RxInfo = emptyRxInfo();
+var mac_valid: bool = false;
+var mac_addr: [6]u8 = [_]u8{0} ** 6;
 
 pub fn init() void {
     is_detected = false;
@@ -166,6 +172,8 @@ pub fn init() void {
     tx_last_status = .not_ready;
     rx_next_index = 0;
     rx_info = emptyRxInfo();
+    mac_valid = false;
+    mac_addr = [_]u8{0} ** 6;
 
     for (0..pci.deviceCount()) |i| {
         const device = pci.deviceAt(i) orelse continue;
@@ -175,6 +183,7 @@ pub fn init() void {
         detected_model = model;
         detected_bar0 = decodeBar(device.bar0);
         mapMmio();
+        readMacAddress();
         initRings();
         refresh();
         is_detected = true;
@@ -210,6 +219,8 @@ pub fn detected() ?Detection {
         .status = status,
         .tx_frames_sent = tx_frames_sent,
         .tx_last_status = tx_last_status,
+        .mac_valid = mac_valid,
+        .mac = mac_addr,
     };
 }
 
@@ -232,7 +243,7 @@ pub fn transmitTestFrame() TxStatus {
     @memset(frame[0..], 0);
 
     const dst = [_]u8{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-    const src = [_]u8{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    const src = if (mac_valid) mac_addr else [_]u8{ 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
     const payload = "MerlionOS-Zig e1000 TX test";
 
     @memcpy(frame[0..6], dst[0..]);
@@ -308,6 +319,23 @@ fn transmitInternal(frame: []const u8) TxStatus {
     return .timeout;
 }
 
+fn readMacAddress() void {
+    if (!mmio_mapped) return;
+
+    const ral = readReg32(REG_RAL0);
+    const rah = readReg32(REG_RAH0);
+
+    mac_addr = .{
+        @truncate(ral),
+        @truncate(ral >> 8),
+        @truncate(ral >> 16),
+        @truncate(ral >> 24),
+        @truncate(rah),
+        @truncate(rah >> 8),
+    };
+    mac_valid = !isZeroMac(mac_addr);
+}
+
 fn pollReceiveInternal() RxStatus {
     if (!mmio_mapped or !rings.initialized) return .not_ready;
 
@@ -350,6 +378,13 @@ fn pollReceiveInternal() RxStatus {
     releaseRxDesc(rx_next_index);
     refresh();
     return .received;
+}
+
+fn isZeroMac(mac: [6]u8) bool {
+    for (mac) |byte| {
+        if (byte != 0) return false;
+    }
+    return true;
 }
 
 fn mapMmio() void {
