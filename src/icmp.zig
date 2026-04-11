@@ -1,4 +1,5 @@
 const arp = @import("arp.zig");
+const arp_cache = @import("arp_cache.zig");
 const e1000 = @import("e1000.zig");
 
 const ETHERNET_HEADER_LEN: usize = 14;
@@ -69,13 +70,12 @@ pub fn sendEchoRequest(target_ip: arp.Ipv4, source_ip: arp.Ipv4) SendStatus {
     const nic = e1000.detected() orelse return remember(.no_nic, source_ip, target_ip);
     if (!nic.mac_valid) return remember(.no_mac, source_ip, target_ip);
 
-    const arp_info = arp.info();
-    if (!ipEqual(arp_info.last_reply_ip, target_ip)) {
+    const target_mac = resolveTargetMac(target_ip) orelse {
         return remember(.no_arp_entry, source_ip, target_ip);
-    }
+    };
 
     var frame: [ICMP_ECHO_FRAME_LEN]u8 = undefined;
-    buildEchoRequest(&frame, nic.mac, arp_info.last_reply_mac, source_ip, target_ip, next_sequence);
+    buildEchoRequest(&frame, nic.mac, target_mac, source_ip, target_ip, next_sequence);
 
     const status = mapTxStatus(e1000.transmit(frame[0..]));
     if (status == .sent) {
@@ -84,6 +84,19 @@ pub fn sendEchoRequest(target_ip: arp.Ipv4, source_ip: arp.Ipv4) SendStatus {
         next_sequence +%= 1;
     }
     return remember(status, source_ip, target_ip);
+}
+
+fn resolveTargetMac(target_ip: arp.Ipv4) ?[6]u8 {
+    const arp_info = arp.info();
+    if (ipEqual(arp_info.last_reply_ip, target_ip)) {
+        return arp_info.last_reply_mac;
+    }
+
+    var mac: [6]u8 = undefined;
+    if (arp_cache.resolve(target_ip, &mac)) {
+        return mac;
+    }
+    return null;
 }
 
 pub fn pollEchoReply(local_ip: arp.Ipv4) PollStatus {

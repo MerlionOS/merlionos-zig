@@ -1,5 +1,6 @@
 const ai = @import("ai.zig");
 const arp = @import("arp.zig");
+const arp_cache = @import("arp_cache.zig");
 const e1000 = @import("e1000.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
@@ -23,6 +24,7 @@ const commands = [_]Command{
     .{ .name = "aiask", .description = "Send one prompt to the COM2 AI proxy", .handler = cmdAiask },
     .{ .name = "aipoll", .description = "Poll one response from the COM2 AI proxy", .handler = cmdAipoll },
     .{ .name = "aistatus", .description = "Show COM2 AI proxy status", .handler = cmdAistatus },
+    .{ .name = "arp", .description = "Show the ARP cache table", .handler = cmdArp },
     .{ .name = "arpreq", .description = "Send an ARP request for an IPv4 address", .handler = cmdArpreq },
     .{ .name = "arppoll", .description = "Poll one ARP reply from RX", .handler = cmdArppoll },
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
@@ -118,6 +120,49 @@ fn cmdAipoll(_: []const u8) void {
     }
 }
 
+fn cmdArp(_: []const u8) void {
+    const cache_stats = arp_cache.getStats();
+    log.kprintln("ARP cache:", .{});
+    log.kprintln("  STATE     IP               MAC                AGE  RETRIES", .{});
+
+    var printed: usize = 0;
+    for (arp_cache.getTable()) |entry| {
+        if (entry.state == .free) continue;
+
+        const age = pit.getTicks() -% entry.timestamp;
+        log.kprintln("  {s: <8} {d}.{d}.{d}.{d} {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2} {d: >4} {d}", .{
+            @tagName(entry.state),
+            entry.ip[0],
+            entry.ip[1],
+            entry.ip[2],
+            entry.ip[3],
+            entry.mac[0],
+            entry.mac[1],
+            entry.mac[2],
+            entry.mac[3],
+            entry.mac[4],
+            entry.mac[5],
+            age,
+            entry.retries,
+        });
+        printed += 1;
+    }
+
+    if (printed == 0) {
+        log.kprintln("  <empty>", .{});
+    }
+    log.kprintln("ARP cache stats: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
+        cache_stats.lookups,
+        cache_stats.misses,
+        cache_stats.requests_sent,
+        cache_stats.requests_received,
+        cache_stats.replies_sent,
+        cache_stats.replies_received,
+        cache_stats.retries,
+        cache_stats.expired,
+    });
+}
+
 fn cmdArpreq(args: []const u8) void {
     const trimmed = trimSpaces(args);
     const target_ip = if (trimmed.len == 0) arp.DEFAULT_TARGET_IP else parseIpv4(trimmed) orelse {
@@ -139,6 +184,9 @@ fn cmdArpreq(args: []const u8) void {
         info.last_sender_ip[3],
     });
     log.kprintln("ARP requests sent: {d}", .{info.requests_sent});
+    if (status == .sent) {
+        arp_cache.markPending(target_ip);
+    }
 }
 
 fn cmdArppoll(_: []const u8) void {
@@ -146,6 +194,7 @@ fn cmdArppoll(_: []const u8) void {
     const info = arp.info();
     log.kprintln("arppoll: {s}", .{@tagName(status)});
     if (status == .reply_received) {
+        arp_cache.addStatic(info.last_reply_ip, info.last_reply_mac);
         log.kprintln("ARP reply: {d}.{d}.{d}.{d} is-at {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
             info.last_reply_ip[0],
             info.last_reply_ip[1],
@@ -391,6 +440,17 @@ fn cmdNetinfo(_: []const u8) void {
         @tagName(eth_stats.last_poll_result),
         @tagName(eth_stats.last_tx_status),
     });
+    const cache_stats = arp_cache.getStats();
+    log.kprintln("ARP cache: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
+        cache_stats.lookups,
+        cache_stats.misses,
+        cache_stats.requests_sent,
+        cache_stats.requests_received,
+        cache_stats.replies_sent,
+        cache_stats.replies_received,
+        cache_stats.retries,
+        cache_stats.expired,
+    });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
         nic.device.interrupt_pin,
@@ -405,6 +465,7 @@ fn cmdNetpoll(args: []const u8) void {
     };
 
     const processed = eth.pollAll(count);
+    arp_cache.tick();
     const stats = eth.getStats();
     log.kprintln("netpoll: processed={d} requested={d} last={s}", .{
         processed,

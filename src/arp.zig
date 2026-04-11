@@ -119,10 +119,14 @@ fn parseReply(frame: []const u8) PollStatus {
     if (frame[arp_offset + 5] != ARP_PLEN_IPV4) return .ignored;
     if (readBe16(frame, arp_offset + 6) != ARP_OPER_REPLY) return .ignored;
 
-    @memcpy(stats.last_reply_mac[0..], frame[arp_offset + 8 .. arp_offset + 14]);
-    @memcpy(stats.last_reply_ip[0..], frame[arp_offset + 14 .. arp_offset + 18]);
-    stats.replies_received += 1;
+    learnReply(frame[arp_offset + 14 .. arp_offset + 18].*, frame[arp_offset + 8 .. arp_offset + 14].*);
     return .reply_received;
+}
+
+pub fn learnReply(reply_ip: Ipv4, reply_mac: [6]u8) void {
+    stats.last_reply_ip = reply_ip;
+    stats.last_reply_mac = reply_mac;
+    stats.replies_received += 1;
 }
 
 fn remember(status: SendStatus, sender_ip: Ipv4, target_ip: Ipv4) SendStatus {

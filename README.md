@@ -109,7 +109,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] TCP/IP stack design document: `docs/DESIGN-TCPIP.md`
 - [x] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
 - [x] Ethernet frame send/receive dispatch layer and `netpoll`
-- [ ] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
+- [x] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
 - [ ] IPv4 send/receive/routing layer and ICMP migration onto IPv4
 - [ ] UDP datagram send/receive path
 - [ ] TCP connection state machine with connect/send/recv/close
