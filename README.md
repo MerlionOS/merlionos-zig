@@ -111,7 +111,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Ethernet frame send/receive dispatch layer and `netpoll`
 - [x] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
 - [x] IPv4 send/receive/routing layer and ICMP migration onto IPv4
-- [ ] UDP datagram send/receive path
+- [x] UDP datagram send/receive path
 - [ ] TCP connection state machine with connect/send/recv/close
 - [ ] DNS A-record client over UDP
 - [ ] Socket-like API for future shell/userland integration

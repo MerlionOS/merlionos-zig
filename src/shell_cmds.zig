@@ -12,6 +12,7 @@ const pmm = @import("pmm.zig");
 const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
 const task = @import("task.zig");
+const udp = @import("udp.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
 
@@ -51,6 +52,7 @@ const commands = [_]Command{
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
     .{ .name = "touch", .description = "Create an empty file", .handler = cmdTouch },
     .{ .name = "tree", .description = "Show a directory tree", .handler = cmdTree },
+    .{ .name = "udpsend", .description = "Send a UDP datagram", .handler = cmdUdpsend },
     .{ .name = "uptime", .description = "Time since boot", .handler = cmdUptime },
     .{ .name = "yield", .description = "Yield the CPU cooperatively", .handler = cmdYield },
     .{ .name = "write", .description = "Write text to a virtual file", .handler = cmdWrite },
@@ -59,6 +61,8 @@ const commands = [_]Command{
 
 var current_dir_buf: [MAX_PATH]u8 = [_]u8{'/'} ++ [_]u8{0} ** (MAX_PATH - 1);
 var current_dir_len: usize = 1;
+
+const UDP_SHELL_SOURCE_PORT: u16 = 12345;
 
 pub fn dispatch(cmd: []const u8, args: []const u8) void {
     for (commands) |command| {
@@ -453,6 +457,18 @@ fn cmdNetinfo(_: []const u8) void {
         ipv4_stats.last_protocol,
         @tagName(ipv4_stats.last_send_status),
     });
+    const udp_stats = udp.getStats();
+    log.kprintln("UDP stats: rx={d} tx={d} bad_csum={d} malformed={d} no_binding={d} send_errors={d} last_tx={s} ports={d}->{d}", .{
+        udp_stats.datagrams_received,
+        udp_stats.datagrams_sent,
+        udp_stats.bad_checksum,
+        udp_stats.malformed,
+        udp_stats.no_binding,
+        udp_stats.send_errors,
+        @tagName(udp_stats.last_send_status),
+        udp_stats.last_src_port,
+        udp_stats.last_dst_port,
+    });
     const cache_stats = arp_cache.getStats();
     log.kprintln("ARP cache: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
         cache_stats.lookups,
@@ -502,6 +518,15 @@ fn cmdNetpoll(args: []const u8) void {
         ipv4_stats.malformed,
         ipv4_stats.no_handler,
         ipv4_stats.last_protocol,
+    });
+    const udp_stats = udp.getStats();
+    log.kprintln("UDP stats: rx={d} tx={d} bad_csum={d} malformed={d} no_binding={d} send_errors={d}", .{
+        udp_stats.datagrams_received,
+        udp_stats.datagrams_sent,
+        udp_stats.bad_checksum,
+        udp_stats.malformed,
+        udp_stats.no_binding,
+        udp_stats.send_errors,
     });
 }
 
@@ -591,6 +616,47 @@ fn cmdPingpoll(_: []const u8) void {
             info.last_reply_mac[4],
             info.last_reply_mac[5],
         });
+    }
+}
+
+fn cmdUdpsend(args: []const u8) void {
+    var rest = trimSpaces(args);
+    const ip_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: udpsend <ip> <port> <message>", .{});
+        return;
+    };
+    const port_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: udpsend <ip> <port> <message>", .{});
+        return;
+    };
+
+    const target_ip = parseIpv4(ip_token) orelse {
+        log.kprintln("Usage: udpsend <ip> <port> <message>", .{});
+        return;
+    };
+    const target_port = parseU16(port_token) orelse {
+        log.kprintln("Usage: udpsend <ip> <port> <message>", .{});
+        return;
+    };
+    const message = stripDoubleQuotes(trimSpaces(rest));
+    if (message.len == 0) {
+        log.kprintln("Usage: udpsend <ip> <port> <message>", .{});
+        return;
+    }
+
+    const status = udp.send(UDP_SHELL_SOURCE_PORT, target_ip, target_port, message);
+    log.kprintln("udpsend: {s}", .{@tagName(status)});
+    log.kprintln("UDP {d} -> {d}.{d}.{d}.{d}:{d} bytes={d}", .{
+        UDP_SHELL_SOURCE_PORT,
+        target_ip[0],
+        target_ip[1],
+        target_ip[2],
+        target_ip[3],
+        target_port,
+        message.len,
+    });
+    if (status == .arp_pending) {
+        log.kprintln("Run netpoll and retry after ARP resolves.", .{});
     }
 }
 
@@ -829,6 +895,27 @@ fn trimSpaces(value: []const u8) []const u8 {
     return value[start..end];
 }
 
+fn takeToken(rest: *[]const u8) ?[]const u8 {
+    const trimmed = trimSpaces(rest.*);
+    if (trimmed.len == 0) {
+        rest.* = "";
+        return null;
+    }
+
+    var end: usize = 0;
+    while (end < trimmed.len and trimmed[end] != ' ') : (end += 1) {}
+
+    rest.* = trimSpaces(trimmed[end..]);
+    return trimmed[0..end];
+}
+
+fn stripDoubleQuotes(value: []const u8) []const u8 {
+    if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+        return value[1 .. value.len - 1];
+    }
+    return value;
+}
+
 const MAX_PATH = 256;
 
 fn normalizePathOrRoot(input: []const u8, buffer: *[MAX_PATH]u8) []const u8 {
@@ -885,6 +972,16 @@ fn parseU8(value: []const u8) ?u8 {
         if (ch < '0' or ch > '9') return null;
         result = result * 10 + (ch - '0');
         if (result > 255) return null;
+    }
+    return @intCast(result);
+}
+
+fn parseU16(value: []const u8) ?u16 {
+    var result: u32 = 0;
+    for (value) |ch| {
+        if (ch < '0' or ch > '9') return null;
+        result = result * 10 + (ch - '0');
+        if (result > 65535) return null;
     }
     return @intCast(result);
 }

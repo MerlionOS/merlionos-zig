@@ -1679,7 +1679,7 @@ Implement in this order; each file can be compiled and tested as soon as it is c
 - [ ] Modify `src/arp.zig` — Ensure old commands still work
 - [x] `src/ipv4.zig` — Verify with `pingtest` + `netpoll` (ICMP goes through the new IPv4 layer)
 - [x] Modify `src/icmp.zig` — Switch to ipv4.zig; verify ping still works
-- [ ] `src/udp.zig` — Test with `udpsend`
+- [x] `src/udp.zig` — Test with `udpsend`
 - [ ] `src/tcp.zig` — Test the three-way handshake with `tcpconnect` + `netpoll`
 - [ ] `src/dns.zig` — Test with `dns example.com` + `netpoll`
 - [ ] Shell command integration — Add and verify commands one by one
