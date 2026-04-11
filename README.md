@@ -33,6 +33,10 @@ python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock
 # Optional: delegate prompts to an external LLM CLI or script
 python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
   --backend command --command 'your-llm-command --read-stdin'
+
+# Optional: use OpenAI Responses API from the host bridge
+OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
+  --backend openai --openai-model "${OPENAI_MODEL:-gpt-5.4-mini}"
 ```
 
 ## Roadmap
@@ -99,7 +103,7 @@ python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] COM2 LLM proxy line protocol commands: `aistatus`, `aiask`, `aipoll`
 - [x] Host-side COM2 proxy bridge validation
 - [x] External command-backed host bridge
-- [ ] External LLM provider adapter
+- [x] OpenAI Responses API host bridge adapter
 
 ## Zig vs Rust: Why Rewrite?
 
