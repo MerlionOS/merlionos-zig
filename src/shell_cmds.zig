@@ -4,6 +4,7 @@ const arp_cache = @import("arp_cache.zig");
 const e1000 = @import("e1000.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
+const ipv4 = @import("ipv4.zig");
 const log = @import("log.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
@@ -440,6 +441,18 @@ fn cmdNetinfo(_: []const u8) void {
         @tagName(eth_stats.last_poll_result),
         @tagName(eth_stats.last_tx_status),
     });
+    const ipv4_stats = ipv4.getStats();
+    log.kprintln("IPv4 stats: rx={d} tx={d} bad_csum={d} bad_ver={d} frag_drop={d} no_handler={d} arp_pending={d} last_proto={d} last_tx={s}", .{
+        ipv4_stats.packets_received,
+        ipv4_stats.packets_sent,
+        ipv4_stats.bad_checksum,
+        ipv4_stats.bad_version,
+        ipv4_stats.fragmented_dropped,
+        ipv4_stats.no_handler,
+        ipv4_stats.arp_pending,
+        ipv4_stats.last_protocol,
+        @tagName(ipv4_stats.last_send_status),
+    });
     const cache_stats = arp_cache.getStats();
     log.kprintln("ARP cache: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
         cache_stats.lookups,
@@ -480,6 +493,15 @@ fn cmdNetpoll(args: []const u8) void {
         stats.unknown_received,
         stats.errors,
         stats.last_ethertype,
+    });
+    const ipv4_stats = ipv4.getStats();
+    log.kprintln("IPv4 stats: rx={d} tx={d} bad_csum={d} malformed={d} no_handler={d} last_proto={d}", .{
+        ipv4_stats.packets_received,
+        ipv4_stats.packets_sent,
+        ipv4_stats.bad_checksum,
+        ipv4_stats.malformed,
+        ipv4_stats.no_handler,
+        ipv4_stats.last_protocol,
     });
 }
 
@@ -547,6 +569,8 @@ fn cmdPingtest(args: []const u8) void {
 }
 
 fn cmdPingpoll(_: []const u8) void {
+    _ = eth.pollAll(10);
+    arp_cache.tick();
     const status = icmp.pollEchoReply(arp.DEFAULT_LOCAL_IP);
     const info = icmp.info();
 

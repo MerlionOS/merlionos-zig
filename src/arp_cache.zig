@@ -58,16 +58,26 @@ pub fn init() void {
 pub fn lookup(ip: net.Ipv4Addr, mac_out: *net.MacAddr) LookupResult {
     stats.lookups += 1;
 
-    if (findIndex(ip)) |idx| {
-        const entry = &table[idx];
-        return switch (entry.state) {
-            .resolved => blk: {
-                mac_out.* = entry.mac;
-                break :blk .found;
-            },
-            .pending => .pending,
-            .free => .not_found,
-        };
+    for (table) |entry| {
+        if (entry.state == .resolved and net.ipEqual(entry.ip, ip)) {
+            mac_out.* = entry.mac;
+            return .found;
+        }
+    }
+
+    for (table) |entry| {
+        if (entry.state == .pending and net.ipEqual(entry.ip, ip)) {
+            return .pending;
+        }
+    }
+
+    const arp_info = arp.info();
+    const legacy_ip: net.Ipv4Addr = arp_info.last_reply_ip;
+    const legacy_mac: net.MacAddr = arp_info.last_reply_mac;
+    if (!net.ipEqual(legacy_ip, net.ZERO_IP) and !net.macEqual(legacy_mac, net.ZERO_MAC) and net.ipEqual(legacy_ip, ip)) {
+        mac_out.* = legacy_mac;
+        addStatic(ip, legacy_mac);
+        return .found;
     }
 
     stats.misses += 1;
@@ -79,7 +89,7 @@ pub fn lookup(ip: net.Ipv4Addr, mac_out: *net.MacAddr) LookupResult {
 
 pub fn resolve(ip: net.Ipv4Addr, mac_out: *net.MacAddr) bool {
     for (table) |entry| {
-        if (entry.state == .resolved and ipMatches(entry.ip, ip)) {
+        if (entry.state == .resolved and net.ipEqual(entry.ip, ip)) {
             mac_out.* = entry.mac;
             return true;
         }
@@ -251,7 +261,7 @@ fn insertPending(ip: net.Ipv4Addr, timestamp: u64, retries: u8) void {
 
 fn findIndex(ip: net.Ipv4Addr) ?usize {
     for (table, 0..) |entry, i| {
-        if (entry.state != .free and ipMatches(entry.ip, ip)) return i;
+        if (entry.state != .free and net.ipEqual(entry.ip, ip)) return i;
     }
     return null;
 }
@@ -259,14 +269,10 @@ fn findIndex(ip: net.Ipv4Addr) ?usize {
 fn removeDuplicateEntries(ip: net.Ipv4Addr, keep_index: usize) void {
     for (&table, 0..) |*entry, i| {
         if (i == keep_index) continue;
-        if (entry.state != .free and ipMatches(entry.ip, ip)) {
+        if (entry.state != .free and net.ipEqual(entry.ip, ip)) {
             entry.* = emptyEntry();
         }
     }
-}
-
-fn ipMatches(a: net.Ipv4Addr, b: net.Ipv4Addr) bool {
-    return a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3];
 }
 
 fn chooseSlot() usize {

@@ -1677,8 +1677,8 @@ Implement in this order; each file can be compiled and tested as soon as it is c
 - [ ] `src/eth.zig` — After compilation, test frame dispatch in the shell with `netpoll`
 - [ ] `src/arp_cache.zig` — Verify cache with `arpreq` + `netpoll` + `arp`
 - [ ] Modify `src/arp.zig` — Ensure old commands still work
-- [ ] `src/ipv4.zig` — Verify with `pingtest` + `netpoll` (ICMP goes through the new IPv4 layer)
-- [ ] Modify `src/icmp.zig` — Switch to ipv4.zig; verify ping still works
+- [x] `src/ipv4.zig` — Verify with `pingtest` + `netpoll` (ICMP goes through the new IPv4 layer)
+- [x] Modify `src/icmp.zig` — Switch to ipv4.zig; verify ping still works
 - [ ] `src/udp.zig` — Test with `udpsend`
 - [ ] `src/tcp.zig` — Test the three-way handshake with `tcpconnect` + `netpoll`
 - [ ] `src/dns.zig` — Test with `dns example.com` + `netpoll`
