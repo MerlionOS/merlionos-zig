@@ -15,6 +15,7 @@ const heap = @import("heap.zig");
 const pci = @import("pci.zig");
 const e1000 = @import("e1000.zig");
 const net = @import("net.zig");
+const eth = @import("eth.zig");
 const ai = @import("ai.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
@@ -131,6 +132,7 @@ export fn _start() callconv(.c) noreturn {
     }
 
     net.init();
+    eth.init();
     const net_cfg = net.getConfig();
     var ip_buf: [16]u8 = undefined;
     if (net_cfg.mac_valid) {

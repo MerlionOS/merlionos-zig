@@ -1,6 +1,7 @@
 const ai = @import("ai.zig");
 const arp = @import("arp.zig");
 const e1000 = @import("e1000.zig");
+const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
 const log = @import("log.zig");
 const pci = @import("pci.zig");
@@ -36,6 +37,7 @@ const commands = [_]Command{
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
     .{ .name = "mkdir", .description = "Create a directory in the virtual filesystem", .handler = cmdMkdir },
     .{ .name = "netinfo", .description = "Show detected network device details", .handler = cmdNetinfo },
+    .{ .name = "netpoll", .description = "Poll the Ethernet dispatch layer", .handler = cmdNetpoll },
     .{ .name = "netrx", .description = "Poll one raw Ethernet RX descriptor", .handler = cmdNetrx },
     .{ .name = "nettest", .description = "Transmit one raw Ethernet test frame", .handler = cmdNettest },
     .{ .name = "pingpoll", .description = "Poll one ICMP echo reply", .handler = cmdPingpoll },
@@ -378,9 +380,45 @@ fn cmdNetinfo(_: []const u8) void {
         icmp_info.last_target_ip[2],
         icmp_info.last_target_ip[3],
     });
+    const eth_stats = eth.getStats();
+    log.kprintln("ETH stats: rx={d} tx={d} arp={d} ipv4={d} unknown={d} errors={d} last_rx={s} last_tx={s}", .{
+        eth_stats.frames_received,
+        eth_stats.frames_sent,
+        eth_stats.arp_received,
+        eth_stats.ipv4_received,
+        eth_stats.unknown_received,
+        eth_stats.errors,
+        @tagName(eth_stats.last_poll_result),
+        @tagName(eth_stats.last_tx_status),
+    });
     log.kprintln("IRQ:    line={d} pin={d}", .{
         nic.device.interrupt_line,
         nic.device.interrupt_pin,
+    });
+}
+
+fn cmdNetpoll(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const count = if (trimmed.len == 0) 10 else parseUsize(trimmed, 1000) orelse {
+        log.kprintln("Usage: netpoll [count]", .{});
+        return;
+    };
+
+    const processed = eth.pollAll(count);
+    const stats = eth.getStats();
+    log.kprintln("netpoll: processed={d} requested={d} last={s}", .{
+        processed,
+        count,
+        @tagName(stats.last_poll_result),
+    });
+    log.kprintln("ETH stats: rx={d} tx={d} arp={d} ipv4={d} unknown={d} errors={d} last_ethertype=0x{x:0>4}", .{
+        stats.frames_received,
+        stats.frames_sent,
+        stats.arp_received,
+        stats.ipv4_received,
+        stats.unknown_received,
+        stats.errors,
+        stats.last_ethertype,
     });
 }
 
@@ -764,6 +802,16 @@ fn parseU8(value: []const u8) ?u8 {
         if (result > 255) return null;
     }
     return @intCast(result);
+}
+
+fn parseUsize(value: []const u8, max_value: usize) ?usize {
+    var result: usize = 0;
+    for (value) |ch| {
+        if (ch < '0' or ch > '9') return null;
+        result = result * 10 + (ch - '0');
+        if (result > max_value) return null;
+    }
+    return result;
 }
 
 fn printDirEntry(_: u16, inode: *const vfs.Inode) void {
