@@ -98,12 +98,24 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] IPv4 + ICMP echo request frame construction
 - [x] ICMP echo reply polling and stats
 
-### Phase 8: AI Integration (current)
+### Phase 8: AI Integration
 - [x] COM2 UART plumbing and detection
 - [x] COM2 LLM proxy line protocol commands: `aistatus`, `aiask`, `aipoll`
 - [x] Host-side COM2 proxy bridge validation
 - [x] External command-backed host bridge
 - [x] OpenAI Responses API host bridge adapter
+
+### Phase 9: TCP/IP Stack (current)
+- [x] TCP/IP stack design document: `docs/DESIGN-TCPIP.md`
+- [ ] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
+- [ ] Ethernet frame send/receive dispatch layer and `netpoll`
+- [ ] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
+- [ ] IPv4 send/receive/routing layer and ICMP migration onto IPv4
+- [ ] UDP datagram send/receive path
+- [ ] TCP connection state machine with connect/send/recv/close
+- [ ] DNS A-record client over UDP
+- [ ] Socket-like API for future shell/userland integration
+- [ ] Shell commands: `ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`
 
 ## Zig vs Rust: Why Rewrite?
 
