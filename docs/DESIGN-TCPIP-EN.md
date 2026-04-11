@@ -1673,14 +1673,14 @@ If host port forwarding is needed, add to the QEMU parameters in build.zig:
 
 Implement in this order; each file can be compiled and tested as soon as it is complete:
 
-- [ ] `src/net.zig` — Compilation alone is sufficient to verify; no runtime dependencies
-- [ ] `src/eth.zig` — After compilation, test frame dispatch in the shell with `netpoll`
-- [ ] `src/arp_cache.zig` — Verify cache with `arpreq` + `netpoll` + `arp`
-- [ ] Modify `src/arp.zig` — Ensure old commands still work
+- [x] `src/net.zig` — Compilation alone is sufficient to verify; no runtime dependencies
+- [x] `src/eth.zig` — After compilation, test frame dispatch in the shell with `netpoll`
+- [x] `src/arp_cache.zig` — Verify cache with `arpreq` + `netpoll` + `arp`
+- [x] Modify `src/arp.zig` — Ensure old commands still work
 - [x] `src/ipv4.zig` — Verify with `pingtest` + `netpoll` (ICMP goes through the new IPv4 layer)
 - [x] Modify `src/icmp.zig` — Switch to ipv4.zig; verify ping still works
 - [x] `src/udp.zig` — Test with `udpsend`
 - [ ] `src/tcp.zig` — Test the three-way handshake with `tcpconnect` + `netpoll`
 - [ ] `src/dns.zig` — Test with `dns example.com` + `netpoll`
-- [ ] Shell command integration — Add and verify commands one by one
-- [ ] `src/main.zig` — Add initialization calls
+- [ ] Shell command integration — Add and verify commands one by one (`netpoll`, `arp`, `udpsend` done)
+- [ ] `src/main.zig` — Add initialization calls (net/eth/arp_cache/ipv4/icmp/udp wired)

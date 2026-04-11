@@ -1673,14 +1673,14 @@ MerlionOS> dns example.com    # 第二次应该从缓存返回
 
 按此顺序实现，每完成一个文件即可编译测试：
 
-- [ ] `src/net.zig` — 编译即可验证，无运行时依赖
-- [ ] `src/eth.zig` — 编译后可在 shell 中用 `netpoll` 测试帧分发
-- [ ] `src/arp_cache.zig` — 用 `arpreq` + `netpoll` + `arp` 验证缓存
-- [ ] 修改 `src/arp.zig` — 确保旧命令仍工作
+- [x] `src/net.zig` — 编译即可验证，无运行时依赖
+- [x] `src/eth.zig` — 编译后可在 shell 中用 `netpoll` 测试帧分发
+- [x] `src/arp_cache.zig` — 用 `arpreq` + `netpoll` + `arp` 验证缓存
+- [x] 修改 `src/arp.zig` — 确保旧命令仍工作
 - [x] `src/ipv4.zig` — 用 `pingtest` + `netpoll` 验证（ICMP 走新的 IPv4 层）
 - [x] 修改 `src/icmp.zig` — 改用 ipv4.zig，验证 ping 仍工作
 - [x] `src/udp.zig` — 用 `udpsend` 测试
 - [ ] `src/tcp.zig` — 用 `tcpconnect` + `netpoll` 测试三次握手
 - [ ] `src/dns.zig` — 用 `dns example.com` + `netpoll` 测试
-- [ ] Shell 命令集成 — 逐个添加验证
-- [ ] `src/main.zig` — 添加初始化调用
+- [ ] Shell 命令集成 — 逐个添加验证（已完成 `netpoll`, `arp`, `udpsend`）
+- [ ] `src/main.zig` — 添加初始化调用（已接入 net/eth/arp_cache/ipv4/icmp/udp）
