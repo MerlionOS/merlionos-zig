@@ -14,6 +14,7 @@ const pmm = @import("pmm.zig");
 const heap = @import("heap.zig");
 const pci = @import("pci.zig");
 const e1000 = @import("e1000.zig");
+const net = @import("net.zig");
 const ai = @import("ai.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
@@ -127,6 +128,21 @@ export fn _start() callconv(.c) noreturn {
         });
     } else {
         log.kprintln("[net] No supported e1000-family NIC detected", .{});
+    }
+
+    net.init();
+    const net_cfg = net.getConfig();
+    var ip_buf: [16]u8 = undefined;
+    if (net_cfg.mac_valid) {
+        var mac_buf: [18]u8 = undefined;
+        log.kprintln("[net] Stack config: mac={s} ip={s}", .{
+            net.formatMac(net_cfg.local_mac, &mac_buf),
+            net.formatIp(net_cfg.local_ip, &ip_buf),
+        });
+    } else {
+        log.kprintln("[net] Stack config: no NIC ip={s}", .{
+            net.formatIp(net_cfg.local_ip, &ip_buf),
+        });
     }
 
     ai.init();

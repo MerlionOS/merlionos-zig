@@ -107,7 +107,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 
 ### Phase 9: TCP/IP Stack (current)
 - [x] TCP/IP stack design document: `docs/DESIGN-TCPIP.md`
-- [ ] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
+- [x] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
 - [ ] Ethernet frame send/receive dispatch layer and `netpoll`
 - [ ] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
 - [ ] IPv4 send/receive/routing layer and ICMP migration onto IPv4
