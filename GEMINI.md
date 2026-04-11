@@ -55,7 +55,7 @@ Strictly adhere to Zig 0.15 syntax to avoid compilation errors:
 ### Technical Integrity
 - **No Libc:** Do not use `std.os` or any host-dependent modules.
 - **Validation:** Always verify changes by booting in QEMU and checking serial logs.
-- **Commit Trailer:** When preparing commits, append `Co-authored-by: Codex <codex@openai.com>` to the message.
+- **Commit Trailer:** When preparing commits, append `Co-authored-by: Gemini <gemini@google.com>` to the message.
 
 ## Key Files
 - `src/main.zig`: Kernel entry point and initialization sequence.
