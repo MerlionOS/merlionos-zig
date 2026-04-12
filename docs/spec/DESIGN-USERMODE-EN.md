@@ -1273,8 +1273,8 @@ Phase 8a: syscall Infrastructure
 - [x] shell_cmds.zig — syscallstat shows dispatcher stats
 
 Phase 8b: User Address Space
-- [ ] src/user_mem.zig — create / mapUserPage / activate / destroy
-- [ ] Verify: create address space, map a page, switch CR3, no crash
+- [x] src/user_mem.zig — create / mapUserPage / activate / destroy
+- [x] Verify: `usermemtest` creates an address space, maps user pages, switches CR3, restores kernel CR3, and does not crash
 
 Phase 8c: User Processes
 - [ ] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent

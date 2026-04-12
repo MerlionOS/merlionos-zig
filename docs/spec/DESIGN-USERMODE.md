@@ -1274,8 +1274,8 @@ Phase 8a: syscall 基础设施
 - [x] shell_cmds.zig — syscallstat 显示 dispatcher 统计
 
 Phase 8b: 用户地址空间
-- [ ] src/user_mem.zig — create / mapUserPage / activate / destroy
-- [ ] 验证: 创建地址空间，映射一页，切换 CR3，不崩
+- [x] src/user_mem.zig — create / mapUserPage / activate / destroy
+- [x] 验证: `usermemtest` 创建地址空间，映射用户页，切换 CR3 并恢复内核 CR3，不崩
 
 Phase 8c: 用户进程
 - [ ] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent

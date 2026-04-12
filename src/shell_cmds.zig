@@ -17,6 +17,7 @@ const scheduler = @import("scheduler.zig");
 const socket = @import("socket.zig");
 const syscall = @import("syscall.zig");
 const task = @import("task.zig");
+const user_mem = @import("user_mem.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
 
@@ -66,6 +67,7 @@ const commands = [_]Command{
     .{ .name = "touch", .description = "Create an empty file", .handler = cmdTouch },
     .{ .name = "tree", .description = "Show a directory tree", .handler = cmdTree },
     .{ .name = "udpsend", .description = "Send a UDP datagram", .handler = cmdUdpsend },
+    .{ .name = "usermemtest", .description = "Verify user address-space switching", .handler = cmdUsermemtest },
     .{ .name = "uptime", .description = "Time since boot", .handler = cmdUptime },
     .{ .name = "yield", .description = "Yield the CPU cooperatively", .handler = cmdYield },
     .{ .name = "write", .description = "Write text to a virtual file", .handler = cmdWrite },
@@ -1142,6 +1144,14 @@ fn cmdTouch(args: []const u8) void {
         .parent_not_dir => log.kprintln("touch: parent is not a directory", .{}),
         .name_invalid => log.kprintln("touch: invalid file name", .{}),
         .create_failed => log.kprintln("touch: failed to create file", .{}),
+    }
+}
+
+fn cmdUsermemtest(_: []const u8) void {
+    const result = user_mem.selfTest();
+    log.kprintln("usermemtest: {s}", .{@tagName(result)});
+    if (result == .ok) {
+        log.kprintln("  created address space, mapped text+stack pages, switched CR3, restored kernel CR3", .{});
     }
 }
 

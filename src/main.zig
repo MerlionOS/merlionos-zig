@@ -28,6 +28,7 @@ const procfs = @import("procfs.zig");
 const devfs = @import("devfs.zig");
 const shell = @import("shell.zig");
 const syscall = @import("syscall.zig");
+const user_mem = @import("user_mem.zig");
 
 pub const panic = @import("panic.zig").panic;
 
@@ -117,6 +118,8 @@ export fn _start() callconv(.c) noreturn {
         pmm.totalMemory() / (1024 * 1024),
         pmm.freeMemory() / (1024 * 1024),
     });
+    user_mem.init();
+    log.kprintln("[mem] User address-space manager initialized", .{});
 
     heap.init();
     log.kprintln("[mem] Heap initialized: {s}", .{
