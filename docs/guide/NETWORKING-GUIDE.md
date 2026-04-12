@@ -538,16 +538,19 @@ MerlionOS-Zig 的 TCP 打算：
 7. **`src/icmp.zig`**
    176 行，一个完整的“ping 客户端”。看 `buildEchoRequest` 和 `handleRx` 如何呼应。
 
-8. **`src/udp.zig`**（规划中）
+8. **`src/udp.zig`**
    上层的第一个“用户态风格 API”。
 
-9. **`src/tcp.zig`**（规划中）
+9. **`src/tcp.zig`**
    这里才是真正展示状态机和序号空间的地方。读之前先自己在纸上画一遍状态机。
 
-10. **`src/dns.zig`**（规划中）
+10. **`src/dns.zig`**
     综合应用：UDP + 大端字节流 + 指针压缩。
 
-11. **`docs/spec/DESIGN-TCPIP.md`**
+11. **`src/socket.zig`**
+    UDP/TCP/DNS 的统一上层 facade，shell 命令和未来用户态网络接口都应该优先从这里接入。
+
+12. **`docs/spec/DESIGN-TCPIP.md`**
     所有新文件的接口、常量、数据结构定义都在这里。把它当 API reference 翻。
 
 ---

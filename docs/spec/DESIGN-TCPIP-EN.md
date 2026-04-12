@@ -1575,11 +1575,10 @@ arp_cache.init()       ← Clear ARP table
   ↓
 ipv4.init()            ← Register protocol handlers (reserve slots)
   ↓
-udp.init()             ← Register with ipv4 (protocol=17), bind DNS port
-  ↓
-tcp.init()             ← Register with ipv4 (protocol=6)
-  ↓
-dns.init()             ← Bind UDP port 10053
+socket.init()          ← Initialize UDP/TCP/DNS and expose the unified upper-layer API
+  ├─ udp.init()         ← Register with ipv4 (protocol=17)
+  ├─ tcp.init()         ← Register with ipv4 (protocol=6)
+  └─ dns.init()         ← Bind UDP port 10053
 ```
 
 ---
@@ -1682,5 +1681,6 @@ Implement in this order; each file can be compiled and tested as soon as it is c
 - [x] `src/udp.zig` — Test with `udpsend`
 - [x] `src/tcp.zig` — Test the three-way handshake, send, receive, and close with `tcpconnect` + `netpoll`
 - [x] `src/dns.zig` — Test with `dns example.com` + `netpoll`, and verify a cache hit on the second query
+- [x] `src/socket.zig` — Unified UDP/TCP/DNS upper-layer API for shell and future userspace reuse
 - [x] Shell command integration — Add and verify commands one by one (`ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget` done)
-- [x] `src/main.zig` — Add initialization calls (net/eth/arp_cache/ipv4/icmp/udp/tcp/dns wired)
+- [x] `src/main.zig` — Add initialization calls (net/eth/arp_cache/ipv4/icmp/socket wired)

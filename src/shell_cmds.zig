@@ -3,7 +3,6 @@ const std = @import("std");
 const ai = @import("ai.zig");
 const arp = @import("arp.zig");
 const arp_cache = @import("arp_cache.zig");
-const dns = @import("dns.zig");
 const e1000 = @import("e1000.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
@@ -15,9 +14,8 @@ const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
 const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
+const socket = @import("socket.zig");
 const task = @import("task.zig");
-const tcp = @import("tcp.zig");
-const udp = @import("udp.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
 
@@ -475,7 +473,7 @@ fn cmdNetinfo(_: []const u8) void {
         ipv4_stats.last_protocol,
         @tagName(ipv4_stats.last_send_status),
     });
-    const udp_stats = udp.getStats();
+    const udp_stats = socket.getUdpStats();
     log.kprintln("UDP stats: rx={d} tx={d} bad_csum={d} malformed={d} no_binding={d} send_errors={d} last_tx={s} ports={d}->{d}", .{
         udp_stats.datagrams_received,
         udp_stats.datagrams_sent,
@@ -487,7 +485,7 @@ fn cmdNetinfo(_: []const u8) void {
         udp_stats.last_src_port,
         udp_stats.last_dst_port,
     });
-    const tcp_stats = tcp.getStats();
+    const tcp_stats = socket.getTcpStats();
     log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} send_errors={d} last_tx={s}", .{
         tcp_stats.segments_received,
         tcp_stats.segments_sent,
@@ -499,7 +497,7 @@ fn cmdNetinfo(_: []const u8) void {
         tcp_stats.send_errors,
         @tagName(tcp_stats.last_send_status),
     });
-    const dns_stats = dns.getStats();
+    const dns_stats = socket.getDnsStats();
     log.kprintln("DNS stats: queries={d} responses={d} hits={d} misses={d} timeouts={d} malformed={d} send_errors={d} last_tx={s}", .{
         dns_stats.queries_sent,
         dns_stats.responses_received,
@@ -559,7 +557,7 @@ fn cmdNetpoll(args: []const u8) void {
         ipv4_stats.no_handler,
         ipv4_stats.last_protocol,
     });
-    const udp_stats = udp.getStats();
+    const udp_stats = socket.getUdpStats();
     log.kprintln("UDP stats: rx={d} tx={d} bad_csum={d} malformed={d} no_binding={d} send_errors={d}", .{
         udp_stats.datagrams_received,
         udp_stats.datagrams_sent,
@@ -568,7 +566,7 @@ fn cmdNetpoll(args: []const u8) void {
         udp_stats.no_binding,
         udp_stats.send_errors,
     });
-    const tcp_stats = tcp.getStats();
+    const tcp_stats = socket.getTcpStats();
     log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} send_errors={d}", .{
         tcp_stats.segments_received,
         tcp_stats.segments_sent,
@@ -579,7 +577,7 @@ fn cmdNetpoll(args: []const u8) void {
         tcp_stats.bad_checksum,
         tcp_stats.send_errors,
     });
-    const dns_stats = dns.getStats();
+    const dns_stats = socket.getDnsStats();
     log.kprintln("DNS stats: queries={d} responses={d} hits={d} misses={d} timeouts={d} malformed={d} send_errors={d}", .{
         dns_stats.queries_sent,
         dns_stats.responses_received,
@@ -705,7 +703,7 @@ fn cmdUdpsend(args: []const u8) void {
         return;
     }
 
-    const status = udp.send(UDP_SHELL_SOURCE_PORT, target_ip, target_port, message);
+    const status = socket.udpSend(UDP_SHELL_SOURCE_PORT, .{ .ip = target_ip, .port = target_port }, message);
     log.kprintln("udpsend: {s}", .{@tagName(status)});
     log.kprintln("UDP {d} -> {d}.{d}.{d}.{d}:{d} bytes={d}", .{
         UDP_SHELL_SOURCE_PORT,
@@ -777,17 +775,17 @@ fn cmdHttpget(args: []const u8) void {
         return;
     }
 
-    var conn_id: tcp.ConnId = 0;
-    const connect_status = tcp.connect(target_ip, port, &conn_id);
+    var conn_id: socket.TcpConnId = 0;
+    const connect_status = socket.tcpConnect(.{ .ip = target_ip, .port = port }, &conn_id);
     if (connect_status != .ok) {
         log.kprintln("httpget: connect failed: {s}", .{@tagName(connect_status)});
         return;
     }
 
-    var state = tcp.State.syn_sent;
+    var state = socket.TcpState.syn_sent;
     const connect_start = pit.getTicks();
     while (pit.getTicks() -% connect_start < HTTP_CONNECT_TIMEOUT_TICKS) {
-        if (tcp.getConnection(conn_id)) |conn| {
+        if (socket.tcpGetConnection(conn_id)) |conn| {
             state = conn.state;
             if (state == .established or state == .closed) break;
         } else {
@@ -799,7 +797,7 @@ fn cmdHttpget(args: []const u8) void {
 
     if (state != .established) {
         log.kprintln("httpget: connect timeout conn={d} state={s}", .{ conn_id, @tagName(state) });
-        tcp.close(conn_id);
+        socket.tcpClose(conn_id);
         return;
     }
 
@@ -810,14 +808,14 @@ fn cmdHttpget(args: []const u8) void {
         .{ path, host },
     ) catch {
         log.kprintln("httpget: request too large", .{});
-        tcp.close(conn_id);
+        socket.tcpClose(conn_id);
         return;
     };
 
-    const send_status = tcp.send(conn_id, request);
+    const send_status = socket.tcpSend(conn_id, request);
     if (send_status != .ok) {
         log.kprintln("httpget: send failed: {s}", .{@tagName(send_status)});
-        tcp.close(conn_id);
+        socket.tcpClose(conn_id);
         return;
     }
 
@@ -829,7 +827,7 @@ fn cmdHttpget(args: []const u8) void {
         _ = serviceNetwork(20);
         response_truncated = drainTcpRecv(conn_id, &response_buf, &response_len) or response_truncated;
 
-        if (tcp.getConnection(conn_id)) |conn| {
+        if (socket.tcpGetConnection(conn_id)) |conn| {
             state = conn.state;
             if (state == .closed or state == .time_wait) break;
         } else {
@@ -851,7 +849,7 @@ fn cmdHttpget(args: []const u8) void {
     }
 
     if (state == .established or state == .close_wait) {
-        tcp.close(conn_id);
+        socket.tcpClose(conn_id);
     }
 }
 
@@ -891,7 +889,7 @@ fn cmdIfconfig(args: []const u8) void {
 
     if (strEql(field, "dns")) {
         net.setDnsServer(parsed_ip);
-        dns.flushCache();
+        socket.flushDnsCache();
         log.kprintln("ifconfig: dns set to {d}.{d}.{d}.{d}", .{ parsed_ip[0], parsed_ip[1], parsed_ip[2], parsed_ip[3] });
         return;
     }
@@ -919,11 +917,11 @@ fn cmdTcpconnect(args: []const u8) void {
         return;
     };
 
-    var conn_id: tcp.ConnId = 0;
-    const result = tcp.connect(target_ip, target_port, &conn_id);
+    var conn_id: socket.TcpConnId = 0;
+    const result = socket.tcpConnect(.{ .ip = target_ip, .port = target_port }, &conn_id);
     log.kprintln("tcpconnect: {s}", .{@tagName(result)});
     if (result == .ok) {
-        const stats = tcp.getStats();
+        const stats = socket.getTcpStats();
         log.kprintln("TCP conn={d} -> {d}.{d}.{d}.{d}:{d} state=syn_sent tx={s}", .{
             conn_id,
             target_ip[0],
@@ -955,7 +953,7 @@ fn cmdTcpsend(args: []const u8) void {
         return;
     }
 
-    const result = tcp.send(conn_id, data);
+    const result = socket.tcpSend(conn_id, data);
     log.kprintln("tcpsend: {s} conn={d} bytes={d}", .{ @tagName(result), conn_id, data.len });
 }
 
@@ -965,7 +963,7 @@ fn cmdTcprecv(args: []const u8) void {
         return;
     };
 
-    const result = tcp.recv(conn_id);
+    const result = socket.tcpRecv(conn_id);
     log.kprintln("tcprecv: conn={d} state={s} bytes={d}", .{ conn_id, @tagName(result.state), result.data.len });
     if (result.data.len > 0) {
         log.kprintln("{s}", .{result.data});
@@ -978,8 +976,8 @@ fn cmdTcpclose(args: []const u8) void {
         return;
     };
 
-    tcp.close(conn_id);
-    const conn = tcp.getConnection(conn_id);
+    socket.tcpClose(conn_id);
+    const conn = socket.tcpGetConnection(conn_id);
     log.kprintln("tcpclose: conn={d} state={s}", .{
         conn_id,
         if (conn) |entry| @tagName(entry.state) else "invalid",
@@ -987,7 +985,7 @@ fn cmdTcpclose(args: []const u8) void {
 }
 
 fn cmdTcpstat(_: []const u8) void {
-    const stats = tcp.getStats();
+    const stats = socket.getTcpStats();
     log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} malformed={d} send_errors={d} last_tx={s}", .{
         stats.segments_received,
         stats.segments_sent,
@@ -1001,9 +999,9 @@ fn cmdTcpstat(_: []const u8) void {
         @tagName(stats.last_send_status),
     });
     log.kprintln("  ID STATE        LOCAL  REMOTE              SND_NXT    RCV_NXT    RX TX", .{});
-    for (0..tcp.MAX_CONNECTIONS) |i| {
-        const conn_id: tcp.ConnId = @intCast(i);
-        const conn = tcp.getConnection(conn_id) orelse continue;
+    for (0..socket.MAX_TCP_CONNECTIONS) |i| {
+        const conn_id: socket.TcpConnId = @intCast(i);
+        const conn = socket.tcpGetConnection(conn_id) orelse continue;
         if (conn.state == .closed) continue;
         log.kprintln("  {d}  {s: <12} {d: <6} {d}.{d}.{d}.{d}:{d: <6} {d: <10} {d: <10} {d: <2} {d}", .{
             i,
@@ -1242,12 +1240,11 @@ fn printPciDevice(device: *const pci.Device) void {
 fn serviceNetwork(max_frames: usize) usize {
     const processed = eth.pollAll(max_frames);
     arp_cache.tick();
-    tcp.tick();
-    dns.tick();
+    socket.tick();
     return processed;
 }
 
-fn resolveHostBlocking(host: []const u8, ip_out: *net.Ipv4Addr) dns.ResolveStatus {
+fn resolveHostBlocking(host: []const u8, ip_out: *net.Ipv4Addr) socket.DnsResolveStatus {
     if (parseIpv4(host)) |ip| {
         ip_out.* = ip;
         return .resolved;
@@ -1255,23 +1252,23 @@ fn resolveHostBlocking(host: []const u8, ip_out: *net.Ipv4Addr) dns.ResolveStatu
     return resolveDnsBlocking(host, ip_out);
 }
 
-fn resolveDnsBlocking(name: []const u8, ip_out: *net.Ipv4Addr) dns.ResolveStatus {
-    var status = dns.resolve(name, ip_out);
+fn resolveDnsBlocking(name: []const u8, ip_out: *net.Ipv4Addr) socket.DnsResolveStatus {
+    var status = socket.resolveA(name, ip_out);
     const start_tick = pit.getTicks();
     while (status == .pending and pit.getTicks() -% start_tick < DNS_COMMAND_TIMEOUT_TICKS) {
         _ = serviceNetwork(10);
-        status = dns.resolve(name, ip_out);
+        status = socket.resolveA(name, ip_out);
     }
 
     if (status == .pending) {
-        dns.tick();
-        status = dns.resolve(name, ip_out);
+        socket.tick();
+        status = socket.resolveA(name, ip_out);
     }
     return status;
 }
 
-fn drainTcpRecv(conn_id: tcp.ConnId, buffer: *[HTTP_RESPONSE_BUFFER_SIZE]u8, len: *usize) bool {
-    const result = tcp.recv(conn_id);
+fn drainTcpRecv(conn_id: socket.TcpConnId, buffer: *[HTTP_RESPONSE_BUFFER_SIZE]u8, len: *usize) bool {
+    const result = socket.tcpRecv(conn_id);
     if (result.data.len == 0) return false;
 
     const available = buffer.len - len.*;
@@ -1301,9 +1298,9 @@ fn printIfconfig() void {
 
     const eth_stats = eth.getStats();
     const ipv4_stats = ipv4.getStats();
-    const udp_stats = udp.getStats();
-    const tcp_stats = tcp.getStats();
-    const dns_stats = dns.getStats();
+    const udp_stats = socket.getUdpStats();
+    const tcp_stats = socket.getTcpStats();
+    const dns_stats = socket.getDnsStats();
     log.kprintln("ETH stats: rx={d} tx={d} errors={d} last={s}", .{
         eth_stats.frames_received,
         eth_stats.frames_sent,
@@ -1445,8 +1442,8 @@ fn parseU16(value: []const u8) ?u16 {
     return @intCast(result);
 }
 
-fn parseConnId(value: []const u8) ?tcp.ConnId {
-    const id = parseUsize(value, tcp.MAX_CONNECTIONS - 1) orelse return null;
+fn parseConnId(value: []const u8) ?socket.TcpConnId {
+    const id = parseUsize(value, socket.MAX_TCP_CONNECTIONS - 1) orelse return null;
     return @intCast(id);
 }
 

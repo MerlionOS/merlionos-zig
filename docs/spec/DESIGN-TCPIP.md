@@ -1575,11 +1575,10 @@ arp_cache.init()       ← 清空 ARP 表
   ↓
 ipv4.init()            ← 注册协议处理器（预留槽位）
   ↓
-udp.init()             ← 注册到 ipv4 (protocol=17)，绑定 DNS 端口
-  ↓
-tcp.init()             ← 注册到 ipv4 (protocol=6)
-  ↓
-dns.init()             ← 绑定 UDP 端口 10053
+socket.init()          ← 初始化 UDP/TCP/DNS 并提供统一上层 API
+  ├─ udp.init()         ← 注册到 ipv4 (protocol=17)
+  ├─ tcp.init()         ← 注册到 ipv4 (protocol=6)
+  └─ dns.init()         ← 绑定 UDP 端口 10053
 ```
 
 ---
@@ -1682,5 +1681,6 @@ MerlionOS> dns example.com    # 第二次应该从缓存返回
 - [x] `src/udp.zig` — 用 `udpsend` 测试
 - [x] `src/tcp.zig` — 用 `tcpconnect` + `netpoll` 测试三次握手、发送、接收和关闭
 - [x] `src/dns.zig` — 用 `dns example.com` + `netpoll` 测试，第二次查询验证缓存命中
+- [x] `src/socket.zig` — 统一 UDP/TCP/DNS 上层 API，供 shell 和未来用户态复用
 - [x] Shell 命令集成 — 逐个添加验证（已完成 `ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`）
-- [x] `src/main.zig` — 添加初始化调用（已接入 net/eth/arp_cache/ipv4/icmp/udp/tcp/dns）
+- [x] `src/main.zig` — 添加初始化调用（已接入 net/eth/arp_cache/ipv4/icmp/socket）

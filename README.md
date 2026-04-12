@@ -119,7 +119,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Shell commands: `ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`
 - [x] TCP connection state machine with connect/send/recv/close
 - [x] DNS A-record client over UDP
-- [ ] Socket-like API for future shell/userland integration
+- [x] Socket-like API for future shell/userland integration
 
 ## Zig vs Rust: Why Rewrite?
 

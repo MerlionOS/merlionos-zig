@@ -19,9 +19,7 @@ const eth = @import("eth.zig");
 const arp_cache = @import("arp_cache.zig");
 const ipv4 = @import("ipv4.zig");
 const icmp = @import("icmp.zig");
-const udp = @import("udp.zig");
-const tcp = @import("tcp.zig");
-const dns = @import("dns.zig");
+const socket = @import("socket.zig");
 const ai = @import("ai.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
@@ -142,9 +140,7 @@ export fn _start() callconv(.c) noreturn {
     arp_cache.init();
     ipv4.init();
     icmp.init();
-    udp.init();
-    tcp.init();
-    dns.init();
+    socket.init();
     const net_cfg = net.getConfig();
     var ip_buf: [16]u8 = undefined;
     if (net_cfg.mac_valid) {

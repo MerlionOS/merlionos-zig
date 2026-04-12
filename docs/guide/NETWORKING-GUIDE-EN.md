@@ -591,17 +591,21 @@ Recommended source-code reading order:
    176 lines, a complete "ping client." See how `buildEchoRequest` and `handleRx`
    mirror each other.
 
-8. **`src/udp.zig`** (planned)
+8. **`src/udp.zig`**
    The first "userspace-style API" on the upper layer.
 
-9. **`src/tcp.zig`** (planned)
+9. **`src/tcp.zig`**
    This is where the state machine and sequence-number space are truly on display.
    Before reading, draw the state machine on paper yourself first.
 
-10. **`src/dns.zig`** (planned)
+10. **`src/dns.zig`**
     An integrated application: UDP + big-endian byte streams + pointer compression.
 
-11. **`docs/spec/DESIGN-TCPIP.md`**
+11. **`src/socket.zig`**
+    The unified UDP/TCP/DNS facade. Shell commands and future userspace networking
+    entry points should go through this layer first.
+
+12. **`docs/spec/DESIGN-TCPIP.md`**
     Interfaces, constants, and data-structure definitions for all new files are
     here. Flip through it as an API reference.
 
