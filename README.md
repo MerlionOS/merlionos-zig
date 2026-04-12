@@ -1,7 +1,7 @@
 # MerlionOS-Zig
 
 <p align="center">
-  <img src="logo.svg" width="200" height="200" alt="MerlionOS Logo">
+  <img src="assets/mascot-512.png" width="240" height="240" alt="MerlionOS-Zig mascot">
 </p>
 
 A bare-metal x86_64 operating system kernel written in Zig, inspired by [MerlionOS](https://github.com/lai3d/merlionos) (Rust). Clean reimplementation leveraging Zig's comptime, explicit allocators, and error unions.
