@@ -1,34 +1,19 @@
 <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Merlion silhouette -->
-  <path d="M100 30 
-           C 120 30, 140 45, 140 70 
-           C 140 95, 120 100, 110 105 
-           L 110 130 
-           C 110 150, 140 160, 150 145 
-           C 160 130, 140 115, 130 115 
-           L 125 120 
-           C 135 125, 145 135, 145 145 
-           C 145 165, 110 175, 90 165 
-           C 70 155, 75 130, 75 110 
-           C 75 90, 60 85, 60 65 
-           C 60 45, 80 30, 100 30 Z" 
-        fill="#F7A41D" />
+  <!-- Outer Ring (Subtle) -->
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#F7A41D" stroke-width="2" opacity="0.3" />
   
-  <!-- Eye -->
-  <circle cx="115" cy="55" r="4" fill="white" />
-  
-  <!-- Mane detailing (Zig Z) -->
-  <path d="M100 50 L125 50 L100 75 L125 75" 
-        fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-  
-  <!-- Scales/Tail detailing -->
-  <path d="M85 130 Q 95 135, 105 130 
-           M 85 140 Q 95 145, 105 140 
-           M 85 150 Q 95 155, 105 150" 
-        fill="none" stroke="white" stroke-width="2" stroke-linecap="round" />
-  
-  <!-- Decorative bubbles/tech dots -->
-  <circle cx="160" cy="50" r="4" fill="#F7A41D" opacity="0.6" />
-  <circle cx="170" cy="80" r="3" fill="#F7A41D" opacity="0.4" />
-  <circle cx="165" cy="110" r="2" fill="#F7A41D" opacity="0.2" />
+  <!-- Stylized Merlion 'S' Curve (Lion head to Fish tail) -->
+  <path d="M80 50 
+           C 110 30, 150 40, 150 75 
+           C 150 100, 130 115, 115 125 
+           C 100 135, 90 150, 100 170 
+           C 110 190, 140 185, 150 170" 
+        fill="none" stroke="#F7A41D" stroke-width="15" stroke-linecap="round" />
+        
+  <!-- The Zig 'Z' Bolt (Integrated into the core) -->
+  <path d="M85 85 L125 85 L85 125 L125 125" 
+        fill="none" stroke="#F7A41D" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Lion Eye (Minimalist dot) -->
+  <circle cx="125" cy="55" r="5" fill="#F7A41D" />
 </svg>
