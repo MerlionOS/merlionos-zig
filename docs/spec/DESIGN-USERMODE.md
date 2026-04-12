@@ -1,147 +1,27 @@
-# MerlionOS-Zig 用户态设计文档
+# MerlionOS-Zig 用户态实现规格
 
-> 本文档供 AI 代码生成工具（Codex 等）直接实现使用。
-> 同时包含详细的原理讲解，帮助读者理解 x86_64 用户态的核心概念。
+> 本文档是**实现规格（Spec）**，供 AI 代码生成工具（Codex 等）直接实现使用。
+> 配套的原理讲解见 [../guide/USERMODE-GUIDE.md](../guide/USERMODE-GUIDE.md)。
 > 实现顺序严格按 Phase 编号进行。
 
 ## 目录
 
-1. [背景知识：什么是用户态](#1-背景知识什么是用户态)
-2. [当前内核状态分析](#2-当前内核状态分析)
-3. [Phase 8a: syscall 基础设施](#3-phase-8a-syscall-基础设施)
-4. [Phase 8b: 用户态地址空间](#4-phase-8b-用户态地址空间)
-5. [Phase 8c: 用户进程加载与运行](#5-phase-8c-用户进程加载与运行)
-6. [Phase 8d: ELF 加载器](#6-phase-8d-elf-加载器)
-7. [Phase 8e: 进程生命周期](#7-phase-8e-进程生命周期)
-8. [Phase 8f: Shell 集成](#8-phase-8f-shell-集成)
-9. [集成与初始化顺序](#9-集成与初始化顺序)
-10. [QEMU 测试方法](#10-qemu-测试方法)
-11. [安全模型总结](#11-安全模型总结)
+1. [当前内核状态分析](#1-当前内核状态分析)
+2. [Phase 8a: syscall 基础设施](#2-phase-8a-syscall-基础设施)
+3. [Phase 8b: 用户态地址空间](#3-phase-8b-用户态地址空间)
+4. [Phase 8c: 用户进程加载与运行](#4-phase-8c-用户进程加载与运行)
+5. [Phase 8d: ELF 加载器](#5-phase-8d-elf-加载器)
+6. [Phase 8e: 进程生命周期](#6-phase-8e-进程生命周期)
+7. [Phase 8f: Shell 集成](#7-phase-8f-shell-集成)
+8. [集成与初始化顺序](#8-集成与初始化顺序)
+9. [QEMU 测试方法](#9-qemu-测试方法)
+10. [附录: 实现顺序检查清单](#10-附录-实现顺序检查清单)
 
 ---
 
-## 1. 背景知识：什么是用户态
+## 1. 当前内核状态分析
 
-### 1.1 特权级（Protection Rings）
-
-x86_64 CPU 有 4 个特权级（Ring 0-3），但现代 OS 只用两个：
-
-```
-Ring 0 (内核态/Supervisor)        Ring 3 (用户态/User)
-┌─────────────────────────┐     ┌─────────────────────────┐
-│ 可以执行任何指令          │     │ 不能执行特权指令          │
-│ 可以访问任何内存          │     │ 只能访问标记为 User 的页  │
-│ 可以操作 I/O 端口        │     │ 不能直接操作硬件          │
-│ 可以修改页表             │     │ 不能修改页表              │
-│ 可以禁用/启用中断        │     │ 不能执行 CLI/STI         │
-└─────────────────────────┘     └─────────────────────────┘
-        ↑                                ↑
-    我们的内核现在在这里           我们要让程序跑在这里
-```
-
-**为什么要有用户态？** 隔离。如果所有代码都在 Ring 0 运行，一个有 bug 的程序可以覆盖内核内存、操作硬件、破坏其他程序。用户态让 CPU 硬件强制执行隔离——用户程序试图做越权操作时，CPU 会触发异常（#GP 或 #PF），内核可以选择杀掉这个程序而不影响系统。
-
-### 1.2 特权级切换的机制
-
-从内核态进入用户态（"落地"到 Ring 3）：
-
-```
-内核 (Ring 0)                     用户程序 (Ring 3)
-     │                                  ↑
-     │  准备好栈帧:                      │
-     │  push USER_DATA_SEL (ss)         │
-     │  push user_rsp                   │
-     │  push user_rflags                │
-     │  push USER_CODE_SEL (cs)         │
-     │  push user_rip (程序入口)         │
-     │                                  │
-     └──── iretq ───────────────────────┘
-           CPU 看到 CS 的 RPL=3，
-           自动切换到 Ring 3
-```
-
-从用户态回到内核态（系统调用）：
-
-```
-用户程序 (Ring 3)                 内核 (Ring 0)
-     │                                  ↑
-     │  int 0x80                        │
-     │  或 syscall 指令                  │
-     └──────────────────────────────────┘
-           CPU 自动:
-           1. 从 TSS 加载 RSP0 (内核栈)
-           2. 保存用户的 RIP, CS, RFLAGS, RSP, SS
-           3. 跳转到中断处理函数
-           4. 特权级变为 Ring 0
-```
-
-### 1.3 关键硬件机制
-
-**GDT（全局描述符表）** — 已有 `gdt.zig`
-
-我们的 GDT 已经定义了 4 个段：
-
-| 选择子 | 用途 | DPL | 说明 |
-|--------|------|-----|------|
-| 0x08 | KERNEL_CODE_SEL | 0 | 内核代码段 |
-| 0x10 | KERNEL_DATA_SEL | 0 | 内核数据段 |
-| 0x18 | USER_DATA_SEL | 3 | 用户数据段（access=0xF2, DPL=3）|
-| 0x20 | USER_CODE_SEL | 3 | 用户代码段（access=0xFA, DPL=3）|
-
-> 注意 USER_DATA_SEL 在 USER_CODE_SEL **前面**。这是 `syscall`/`sysret` 指令要求的布局。`sysret` 硬件要求 SS = STAR[63:48]，CS = STAR[63:48] + 16。所以 data 在前，code 在后。我们的 GDT 已经按这个顺序排列了。
-
-**TSS（任务状态段）** — 已有 `gdt.zig`
-
-TSS 里的 `rsp0` 字段告诉 CPU：当用户态发生中断/异常时，切换到哪个内核栈。每次切换到不同进程时，必须更新 `tss.rsp0` 为该进程的内核栈顶。
-
-**页表** — 已有 `vmm.zig`
-
-`vmm.mapPage` 的 `user` 参数对应页表项的 U/S 位（bit 2）。设置了 U/S 位的页，Ring 3 代码可以访问；未设置的页，只有 Ring 0 能访问。这就是用户态内存隔离的核心。
-
-### 1.4 系统调用是什么
-
-用户程序不能直接操作硬件，但需要做 I/O（打印、读文件、发网络包等）。怎么办？通过系统调用（syscall）"请求"内核代劳：
-
-```
-用户程序:                     内核:
-  "我要打印 Hello"              收到 syscall
-  → rax = 1 (WRITE)           → 检查参数合法性
-  → rdi = 1 (stdout)          → 从用户内存复制数据
-  → rsi = buf_ptr             → 调用 serial/vga 输出
-  → rdx = 5 (长度)             → 返回写入的字节数
-  → int 0x80                   → iretq 回到用户态
-```
-
-这个设计的关键原则：**内核不信任用户传入的任何参数**。用户传来的指针可能指向内核内存、可能越界、可能是 NULL。内核必须验证每一个参数。
-
-### 1.5 虚拟地址空间布局
-
-```
-0xFFFF_FFFF_FFFF_FFFF ┐
-                      │ 内核空间（高半部分）
-                      │ 内核代码、堆、VGA、MMIO...
-                      │ 页表标记为 Supervisor (U/S=0)
-                      │ 用户态代码无法访问
-0xFFFF_FFFF_8000_0000 ┤ ← 内核基地址（linker.ld 里的 0xffffffff80000000）
-         ...          │
-0x0000_8000_0000_0000 ┤ ← 非规范地址空洞（CPU 会 #GP）
-         ...          │
-0x0000_7FFF_FFFF_FFFF ┤ ← 用户空间上限
-                      │
-0x0000_0000_0080_0000 │ ← 用户程序 .text 加载地址
-         ...          │
-0x0000_0000_0010_0000 │ ← 用户堆起始
-         ...          │
-0x0000_7FFF_FFFF_0000 │ ← 用户栈顶（向下增长）
-                      │
-0x0000_0000_0000_0000 ┘ ← NULL 区域（不映射，访问会 #PF）
-```
-
----
-
-## 2. 当前内核状态分析
-
-### 2.1 已有的基础设施（可直接复用）
+### 1.1 已有的基础设施（可直接复用）
 
 | 组件 | 文件 | 用户态需要的能力 | 状态 |
 |------|------|----------------|------|
@@ -152,7 +32,7 @@ TSS 里的 `rsp0` 字段告诉 CPU：当用户态发生中断/异常时，切换
 | 任务管理 | task.zig | 进程概念 | **需要扩展** — 当前只有内核任务，需要增加用户态上下文 |
 | 调度器 | scheduler.zig | 内核/用户任务统一调度 | **需要小改** — 切换时需更新 TSS.rsp0 |
 
-### 2.2 需要新增/修改的部分
+### 1.2 需要新增/修改的部分
 
 ```
 需要新写:
@@ -173,17 +53,7 @@ TSS 里的 `rsp0` 字段告诉 CPU：当用户态发生中断/异常时，切换
 
 ---
 
-## 3. Phase 8a: syscall 基础设施
-
-### 3.1 概念讲解：syscall 分发
-
-当用户程序执行 `int 0x80`，CPU 跳转到 IDT[0x80] 指向的处理函数。我们需要：
-
-1. **保存所有寄存器**（用户程序的状态不能丢）
-2. **读取 rax**（syscall 编号）
-3. **分发到对应的处理函数**
-4. **把返回值放到 rax**
-5. **恢复寄存器，iretq 返回用户态**
+## 2. Phase 8a: syscall 基础设施
 
 寄存器约定（类 Linux）：
 
@@ -197,7 +67,7 @@ TSS 里的 `rsp0` 字段告诉 CPU：当用户态发生中断/异常时，切换
 | r8 | 第 5 个参数 |
 | r9 | 第 6 个参数 |
 
-### 3.2 src/syscall.zig — 系统调用实现
+### 2.1 src/syscall.zig — 系统调用实现
 
 #### 系统调用编号
 
@@ -336,15 +206,6 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64;
 7. return count
 ```
 
-> **安全要点**：为什么不能直接用用户传来的指针？
-> 
-> 虽然我们的内核可以访问所有内存，用户传来的 `buf_ptr` 可能：
-> - 指向内核代码/数据 → 泄露内核信息
-> - 指向未映射的页 → 触发内核 page fault（如果内核没有处理，就崩了）
-> - 指向其他进程的内存（如果以后支持多地址空间）
-> 
-> 所以必须先验证地址落在用户空间范围内，再验证页表确实有映射。
-
 ```zig
 /// SYS_READ: 从输入读取数据
 /// fd: 文件描述符（0=stdin/keyboard）
@@ -428,17 +289,13 @@ fn sysMmap(addr: u64, length: u64) u64;
 4. return 映射的起始虚拟地址
 ```
 
-### 3.3 修改 src/idt.zig — syscall 分发
+### 2.2 修改 src/idt.zig — syscall 分发
 
 当前的 `syscallStub` 使用 `pushRegsAndCall`，只保存 caller-saved 寄存器。需要改为保存完整上下文并传递参数：
 
 ```zig
 // 替换现有的 syscallStub
 fn syscallStub() callconv(.naked) void {
-    // 保存所有通用寄存器
-    // 从寄存器中提取 syscall 参数，调用 syscallDispatch
-    // 把返回值放入栈上保存的 rax 位置
-    // 恢复寄存器，iretq
     asm volatile (
         // 保存寄存器
         \\pushq %%rax
@@ -459,8 +316,6 @@ fn syscallStub() callconv(.naked) void {
         //
         // 调用 syscallDispatch(number=rax, arg1=rdi, arg2=rsi, arg3=rdx, arg4=r10, arg5=r8)
         // System V AMD64 调用约定: rdi, rsi, rdx, rcx, r8, r9
-        // 注意寄存器重排: 我们需要把 rax→rdi, rdi→rsi, rsi→rdx, rdx→rcx, r10→r8, r8→r9
-        // 但是这些寄存器已经 push 到栈上了,从栈上读取来避免冲突
         \\movq 112(%%rsp), %%rdi   // number = saved rax (第15个push, 14*8=112)
         \\movq 64(%%rsp), %%rsi    // arg1 = saved rdi (第8个push, 8*8=64)
         \\movq 72(%%rsp), %%rdx    // arg2 = saved rsi (第9个push, 9*8=72)
@@ -493,30 +348,27 @@ fn syscallStub() callconv(.naked) void {
 }
 ```
 
-> **讲解：栈偏移怎么算的？**
->
-> push 顺序是 rax, rbx, rcx, rdx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15。
-> 栈是向下增长的，所以最后 push 的（r15）在最低地址（rsp+0）。
->
-> ```
-> RSP+112: rax  (第1个push)
-> RSP+104: rbx  (第2个push)
-> RSP+96:  rcx  (第3个push)
-> RSP+88:  rdx  (第4个push)
-> RSP+80:  rbp  (第5个push)
-> RSP+72:  rsi  (第6个push)
-> RSP+64:  rdi  (第7个push)
-> RSP+56:  r8   (第8个push)
-> RSP+48:  r9   (第9个push)
-> RSP+40:  r10  (第10个push)
-> RSP+32:  r11  (第11个push)
-> RSP+24:  r12  (第12个push)
-> RSP+16:  r13  (第13个push)
-> RSP+8:   r14  (第14个push)
-> RSP+0:   r15  (第15个push)
-> ```
+栈布局（15 个 push 之后）：
 
-### 3.4 用户地址验证工具
+```
+RSP+112: rax  (第1个push)
+RSP+104: rbx  (第2个push)
+RSP+96:  rcx  (第3个push)
+RSP+88:  rdx  (第4个push)
+RSP+80:  rbp  (第5个push)
+RSP+72:  rsi  (第6个push)
+RSP+64:  rdi  (第7个push)
+RSP+56:  r8   (第8个push)
+RSP+48:  r9   (第9个push)
+RSP+40:  r10  (第10个push)
+RSP+32:  r11  (第11个push)
+RSP+24:  r12  (第12个push)
+RSP+16:  r13  (第13个push)
+RSP+8:   r14  (第14个push)
+RSP+0:   r15  (第15个push)
+```
+
+### 2.3 用户地址验证工具
 
 ```zig
 // 在 syscall.zig 中
@@ -561,40 +413,11 @@ fn copyToUser(user_dest: u64, src: []const u8) bool {
 
 ---
 
-## 4. Phase 8b: 用户态地址空间
+## 3. Phase 8b: 用户态地址空间
 
-### 4.1 概念讲解：每进程页表
+方案选择：每个用户进程有自己的 PML4。高半部分（内核空间）的 PML4 条目复制自内核页表，低半部分（用户空间）是进程独有的。
 
-当前整个系统共用一个页表（CR3 指向的 PML4）。所有任务看到的虚拟地址空间完全相同。这对内核态任务没问题，但用户进程需要隔离的地址空间。
-
-方案选择：
-
-| 方案 | 优点 | 缺点 | 选择 |
-|------|------|------|------|
-| **A. 完全独立页表** | 真正的进程隔离 | 需要复制内核映射到每个新页表 | ✓ MVP |
-| B. 共享高半部分 | 更简单 | 用户进程能看到彼此的低半部分 | |
-
-我们选方案 A：每个用户进程有自己的 PML4。高半部分（内核空间）的 PML4 条目复制自内核页表，低半部分（用户空间）是进程独有的。
-
-```
-进程 A 的 PML4                  进程 B 的 PML4
-┌─────────────────┐            ┌─────────────────┐
-│ [256] kernel ... │ ←──────── │ [256] kernel ... │  相同的内核映射
-│ [257] kernel ... │            │ [257] kernel ... │
-│ ...              │            │ ...              │
-│ [511] kernel ... │            │ [511] kernel ... │
-├─────────────────┤            ├─────────────────┤
-│ [0] 进程A的代码   │            │ [0] 进程B的代码   │  不同的用户映射
-│ [1] 进程A的堆     │            │ [1] 进程B的堆     │
-│ ...              │            │ ...              │
-│ [255] 进程A的栈   │            │ [255] 进程B的栈   │
-└─────────────────┘            └─────────────────┘
-```
-
-> PML4 有 512 个条目。条目 [256..511] 覆盖高半部分（0xFFFF800000000000+），
-> 条目 [0..255] 覆盖低半部分（用户空间）。
-
-### 4.2 src/user_mem.zig — 用户地址空间管理
+### 3.1 src/user_mem.zig — 用户地址空间管理
 
 #### 常量
 
@@ -702,15 +525,6 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 7. return as
 ```
 
-> **讲解：为什么复制 PML4 高半部分就够了？**
->
-> PML4 条目指向 PDPT。内核的 PDPT/PD/PT 是全局共享的——我们只复制了 PML4 中的指针，
-> 不是深拷贝整个页表树。这意味着：
-> - 所有进程看到的内核内存映射完全一致（因为指向同一个 PDPT）
-> - 如果内核后来新增了映射（修改了 PDPT/PD/PT），所有进程自动看到
-> - 但如果内核新增了 PML4 条目（新的 512GB 区域），需要同步到所有进程的 PML4
->   （对 MVP 来说不会发生，内核只用 [511] 这一个 PML4 条目）
-
 #### activate() 内部逻辑
 
 ```
@@ -724,9 +538,7 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 ```
 1. 如果 page_count >= MAX_USER_PAGES → return false
 2. phys = pmm.allocFrame() 或 return false
-3. 需要在 as 的页表中映射，不是当前活跃的页表
-   这里有个问题：vmm.mapPage 操作当前 CR3 指向的页表
-   方案：临时切换 CR3 → 映射 → 切回
+3. 临时切换 CR3 → 映射 → 切回:
    a. saved_cr3 = cpu.readCr3()
    b. cpu.writeCr3(as.pml4_phys)
    c. vmm.mapPage(virt, phys, writable, user=true)
@@ -735,14 +547,6 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 5. page_count += 1
 6. return true
 ```
-
-> **讲解：为什么需要临时切换 CR3？**
->
-> `vmm.mapPage` 读写页表时通过 `cpu.readCr3()` 获取当前 PML4 地址。
-> 如果我们不切换 CR3，`mapPage` 会修改当前活跃的页表（内核的），而不是新进程的。
-> 切换 CR3 → 映射 → 切回，保证我们操作的是目标地址空间的页表。
->
-> 另一种方案是修改 vmm 接受显式的 PML4 地址，但改动更大。临时切换 CR3 对 MVP 够用。
 
 #### destroy() 内部逻辑
 
@@ -759,9 +563,7 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 
 ---
 
-## 5. Phase 8c: 用户进程加载与运行
-
-### 5.1 概念讲解：从内核跳到用户态
+## 4. Phase 8c: 用户进程加载与运行
 
 把一个用户程序跑起来需要这些步骤：
 
@@ -771,32 +573,19 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 3. 切换到用户地址空间（写 CR3）
 4. 设置 TSS.rsp0 = 该进程的内核栈顶
 5. 通过 iretq 跳到 Ring 3
-
-详细看第 5 步:
-
-            内核栈
-     ┌──────────────────┐
-     │ SS = USER_DATA_SEL│  0x18 | 3 = 0x1B (RPL=3)
-     │ RSP = user_stack  │  用户栈顶
-     │ RFLAGS = 0x202    │  IF=1 (允许中断)
-     │ CS = USER_CODE_SEL│  0x20 | 3 = 0x23 (RPL=3)
-     │ RIP = entry_point │  程序入口地址
-     └──────────────────┘
-              ↓
-           iretq
-              ↓
-     CPU 看到 CS.RPL = 3
-     切换到 Ring 3
-     加载 SS:RSP 为用户栈
-     跳转到 RIP 开始执行
 ```
 
-> **关键细节**：CS 和 SS 的低 2 位是 RPL (Requested Privilege Level)。
-> `USER_CODE_SEL = 0x20`，加上 RPL=3 → `0x23`。
-> `USER_DATA_SEL = 0x18`，加上 RPL=3 → `0x1B`。
-> CPU 通过 RPL 判断特权级切换。
+内核栈上构造的 iretq 帧：
 
-### 5.2 src/process.zig — 进程管理
+```
+SS = USER_DATA_SEL | 3 = 0x1B (RPL=3)
+RSP = user_stack (用户栈顶)
+RFLAGS = 0x202 (IF=1)
+CS = USER_CODE_SEL | 3 = 0x23 (RPL=3)
+RIP = entry_point
+```
+
+### 4.1 src/process.zig — 进程管理
 
 这是对 task.zig 的高层封装，增加用户态支持。
 
@@ -914,15 +703,6 @@ pub fn getKernelCr3() u64;
 7. return pid
 ```
 
-> **讲解：为什么用户进程需要独立的内核栈？**
->
-> 当用户程序在 Ring 3 执行时，如果发生中断（比如 PIT 定时器），CPU 需要切换到 Ring 0。
-> CPU 从 TSS.rsp0 获取内核栈指针，在那里保存用户的寄存器状态。
->
-> 如果两个用户进程共享内核栈，进程 A 被中断时保存到内核栈的状态，
-> 可能被进程 B 的中断覆盖。所以每个用户进程必须有自己的内核栈，
-> 每次上下文切换时更新 TSS.rsp0。
-
 #### onContextSwitch() 内部逻辑
 
 ```
@@ -935,7 +715,7 @@ pub fn getKernelCr3() u64;
    cpu.writeCr3(process_info.address_space.pml4_phys)
 ```
 
-### 5.3 修改 src/task.zig — 增加用户态字段
+### 4.2 修改 src/task.zig — 增加用户态字段
 
 Task 结构体增加最小的字段变更：
 
@@ -959,10 +739,9 @@ pub const Task = struct {
 };
 ```
 
-> 最小侵入式改动。用户态的详细信息（地址空间、内核栈等）存在 process.zig 的 process_table 中，
-> 通过 pid 关联。不在 Task 里塞太多东西，保持现有代码兼容。
+用户态的详细信息（地址空间、内核栈等）存在 process.zig 的 process_table 中，通过 pid 关联。
 
-### 5.4 修改 src/scheduler.zig — 上下文切换时更新 TSS
+### 4.3 修改 src/scheduler.zig — 上下文切换时更新 TSS
 
 ```zig
 // 在 switchFromContext 中，切换到新任务后:
@@ -993,41 +772,9 @@ for (0..task.MAX_TASKS) |i| {
 
 ---
 
-## 6. Phase 8d: ELF 加载器
+## 5. Phase 8d: ELF 加载器
 
-### 6.1 概念讲解：ELF 是什么
-
-ELF (Executable and Linkable Format) 是 Linux/Unix 世界的标准可执行文件格式。当你编译一个 C/Zig 程序，输出的就是 ELF 文件。
-
-ELF 文件结构（简化）：
-
-```
-┌──────────────────────────┐
-│ ELF Header (64 bytes)    │  "这个文件是什么"
-│   magic: 0x7F 'E' 'L' 'F'│
-│   class: 64-bit          │
-│   entry: 程序入口地址      │
-│   phoff: Program Header偏移│
-│   phnum: Program Header数量│
-├──────────────────────────┤
-│ Program Headers          │  "怎么加载到内存"
-│   [0] LOAD: 加载代码段     │   vaddr=0x400000, filesz=0x1000
-│   [1] LOAD: 加载数据段     │   vaddr=0x401000, filesz=0x100
-│   ...                    │
-├──────────────────────────┤
-│ .text (代码)              │  实际的机器指令
-├──────────────────────────┤
-│ .rodata (只读数据)        │  字符串常量等
-├──────────────────────────┤
-│ .data (可写数据)          │  全局变量初始值
-├──────────────────────────┤
-│ .bss (零初始化数据)       │  全局变量（文件中不占空间）
-└──────────────────────────┘
-```
-
-加载器只关心 **Program Headers**（不是 Section Headers）。每个 PT_LOAD 类型的 Program Header 告诉我们：把文件中的哪段数据，加载到虚拟地址的什么位置。
-
-### 6.2 src/elf.zig — ELF 解析器
+### 5.1 src/elf.zig — ELF 解析器
 
 #### 常量
 
@@ -1220,52 +967,11 @@ fn readLe64(data: []const u8, offset: usize) u64 {
 }
 ```
 
-> **注意**：ELF 文件用小端序（Little-endian），和我们的 x86_64 CPU 字节序相同。
-> 这和网络协议（大端序）相反。所以这里用 readLe16 而不是 readBe16。
-
 ---
 
-## 7. Phase 8e: 进程生命周期
+## 6. Phase 8e: 进程生命周期
 
-### 7.1 概念讲解：进程的一生
-
-```
-          spawnFlat / spawnUser
-                  │
-                  ↓
-            ┌──────────┐
-            │  READY   │ ←─── 被创建，等待调度
-            └────┬─────┘
-                 │ 被调度器选中
-                 ↓
-            ┌──────────┐
-            │ RUNNING  │ ←─── 在 CPU 上执行（Ring 3）
-            └─┬──┬──┬──┘
-              │  │  │
-   中断/syscall│  │  │ SYS_SLEEP
-              │  │  ↓
-              │  │ ┌──────────┐
-              │  │ │ BLOCKED  │ ←── 等待条件（睡眠、I/O）
-              │  │ └────┬─────┘
-              │  │      │ 条件满足（wake_tick 到达）
-              │  │      ↓
-              │  │   回到 READY
-              │  │
-              │  │ SYS_EXIT
-              │  ↓
-              │ ┌──────────┐
-              │ │ FINISHED │ ←── 进程结束，等待回收
-              │ └──────────┘
-              │       │
-              │       ↓ 回收资源
-              │    (slot freed)
-              │
-              │ 时间片用完
-              ↓
-          回到 READY（抢占）
-```
-
-### 7.2 内核态 → 用户态的首次跳转
+### 6.1 内核态 → 用户态的首次跳转
 
 新创建的用户进程第一次被调度时，需要从内核态"跳"到 Ring 3。这是通过在内核栈上构造一个假的中断返回帧来实现的：
 
@@ -1305,22 +1011,15 @@ fn buildUserInitialStack(kernel_stack_top: u64, entry: u64, user_stack_top: u64)
 
 当调度器选中这个任务时，`switchFromContext` 返回这个 RSP，中断返回路径 popq 15 个寄存器后执行 `iretq`，CPU 看到 CS.RPL=3，自动切到 Ring 3 执行用户代码。
 
-> **讲解：这是一个优雅的技巧**
->
-> 我们没有专门的 "进入用户态" 指令。而是复用了中断返回机制——
-> `iretq` 不知道自己是不是在"返回"，它只是从栈上弹出 RIP/CS/RFLAGS/RSP/SS 并跳转。
-> 如果我们把 CS 设为用户态的选择子，iretq 就会"返回"到一个从未被"中断"过的用户态程序。
-> 所有操作系统都用这个技巧。
-
 ---
 
-## 8. Phase 8f: Shell 集成
+## 7. Phase 8f: Shell 集成
 
-### 8.1 内嵌测试程序
+### 7.1 内嵌测试程序
 
 MVP 阶段不从磁盘加载 ELF，而是在内核中内嵌几个简单的用户态测试程序（汇编编写，作为字节数组）。
 
-#### 测试程序 1: hello_user（最小可行程序）
+#### 测试程序 1: hello_user
 
 ```zig
 // 在 shell_cmds.zig 或单独的 user_programs.zig 中
@@ -1350,15 +1049,7 @@ pub const hello_user = [_]u8{
 };
 ```
 
-> **讲解：为什么用手写机器码？**
->
-> 用户程序运行在 Ring 3，用完全不同的地址空间。它不能调用内核的 Zig 函数，
-> 唯一的通信方式是系统调用（int 0x80）。最简单的测试方式就是手写几条指令。
->
-> 后续可以用 Zig 交叉编译用户态程序（target: x86_64-freestanding-none），
-> 链接到固定地址，输出 flat binary 或 ELF。
-
-#### 测试程序 2: loop_user（测试抢占）
+#### 测试程序 2: loop_user
 
 ```zig
 /// 无限循环程序：测试用户态被抢占是否工作
@@ -1384,7 +1075,26 @@ pub const loop_user = [_]u8{
 };
 ```
 
-### 8.2 新增 Shell 命令
+#### 测试程序 3: bad_cli / bad_read（保护机制测试）
+
+```zig
+/// 尝试执行 CLI（特权指令），应该被杀掉
+pub const bad_cli = [_]u8{
+    0xFA,       // cli — Ring 3 不允许
+    0xEB, 0xFE, // jmp $ (不应该到达这里)
+};
+
+/// 尝试读取内核内存，应该触发 Page Fault
+pub const bad_read = [_]u8{
+    // mov rax, 0xFFFFFFFF80000000  ; 内核地址
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0xFF,
+    // mov al, [rax]               ; 尝试读取
+    0x8A, 0x00,
+    0xEB, 0xFE, // jmp $
+};
+```
+
+### 7.2 新增 Shell 命令
 
 ```zig
 // 添加到 shell_cmds.zig 的 commands 数组
@@ -1449,9 +1159,9 @@ Syscall statistics:
 
 ---
 
-## 9. 集成与初始化顺序
+## 8. 集成与初始化顺序
 
-### 9.1 src/main.zig 修改
+### 8.1 src/main.zig 修改
 
 在现有初始化序列中添加：
 
@@ -1466,7 +1176,7 @@ process.init();
 log.kprintln("[proc] Process subsystem initialized", .{});
 ```
 
-### 9.2 初始化依赖链
+### 8.2 初始化依赖链
 
 ```
 gdt.init()      ← GDT + TSS（已有）
@@ -1486,7 +1196,7 @@ process.init()  ← 新增：保存内核 CR3，初始化 process_table
 scheduler.init() ← 调度器（小改）
 ```
 
-### 9.3 新增文件列表
+### 8.3 新增文件列表
 
 ```
 src/
@@ -1497,7 +1207,7 @@ src/
 └── user_programs.zig # 内嵌的用户态测试程序（机器码）
 ```
 
-### 9.4 修改文件列表
+### 8.4 修改文件列表
 
 ```
 src/idt.zig          # syscallStub 改为完整的 syscall 分发
@@ -1510,9 +1220,9 @@ src/main.zig         # 新增 process.init() 调用
 
 ---
 
-## 10. QEMU 测试方法
+## 9. QEMU 测试方法
 
-### 10.1 测试 hello_user
+### 9.1 测试 hello_user
 
 ```
 MerlionOS> runuser hello
@@ -1521,13 +1231,7 @@ Hello from Ring 3!
 Process 'hello' exited with code 0
 ```
 
-如果看到 "Hello from Ring 3!"，说明：
-- 用户地址空间创建成功
-- Ring 0 → Ring 3 跳转成功
-- int 0x80 → syscall 分发 → SYS_WRITE 成功
-- SYS_EXIT 正确回收了进程
-
-### 10.2 测试 loop_user + 抢占
+### 9.2 测试 loop_user + 抢占
 
 ```
 MerlionOS> runuser loop &     # 后台运行（如果支持的话）
@@ -1540,33 +1244,14 @@ MerlionOS> killuser 3
 Killed process 3
 ```
 
-### 10.3 测试保护机制
+### 9.3 测试保护机制
 
 ```
 # 用户程序尝试执行特权指令 → 应该触发 #GP，内核杀掉进程
 # 用户程序尝试访问内核地址 → 应该触发 #PF，内核杀掉进程
 ```
 
-可以创建专门的测试程序：
-
-```zig
-/// 尝试执行 CLI（特权指令），应该被杀掉
-pub const bad_cli = [_]u8{
-    0xFA,       // cli — Ring 3 不允许
-    0xEB, 0xFE, // jmp $ (不应该到达这里)
-};
-
-/// 尝试读取内核内存，应该触发 Page Fault
-pub const bad_read = [_]u8{
-    // mov rax, 0xFFFFFFFF80000000  ; 内核地址
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0xFF,
-    // mov al, [rax]               ; 尝试读取
-    0x8A, 0x00,
-    0xEB, 0xFE, // jmp $
-};
-```
-
-### 10.4 测试用例清单
+### 9.4 测试用例清单
 
 ```
 - [ ] hello_user: 打印并正常退出
@@ -1580,33 +1265,7 @@ pub const bad_read = [_]u8{
 
 ---
 
-## 11. 安全模型总结
-
-```
-保护层次:
-
-1. CPU 硬件 (Ring 0 vs Ring 3)
-   - 用户代码无法执行 CLI/STI/HLT/LGDT/LIDT/MOV CR*/IN/OUT 等特权指令
-   - 违反 → #GP 异常 → 内核捕获 → 杀进程
-
-2. 页表 (U/S 位)
-   - 用户页标记 U/S=1，内核页 U/S=0
-   - Ring 3 代码访问 U/S=0 的页 → #PF 异常 → 内核捕获 → 杀进程
-
-3. 系统调用参数验证
-   - 所有用户传入的指针必须验证在用户地址空间内
-   - 所有用户传入的长度必须验证不越界
-   - 内核不直接解引用用户指针（先复制到内核缓冲区）
-
-4. TSS.rsp0 切换
-   - 每次上下文切换更新 TSS.rsp0
-   - 确保中断发生时使用正确进程的内核栈
-   - 防止进程间通过内核栈泄露信息
-```
-
----
-
-## 附录: 实现顺序检查清单
+## 10. 附录: 实现顺序检查清单
 
 ```
 Phase 8a: syscall 基础设施

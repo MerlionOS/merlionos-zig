@@ -1,148 +1,27 @@
-# MerlionOS-Zig User Mode Design Document
+# MerlionOS-Zig User Mode Implementation Spec
 
-> This document is intended for direct use by AI code generation tools (Codex, etc.).
-> It also includes detailed explanations to help readers understand the core concepts of x86_64 user mode.
+> This document is the **implementation spec**, intended for direct use by AI code generation tools (Codex, etc.).
+> The companion conceptual guide is at [../guide/USERMODE-GUIDE-EN.md](../guide/USERMODE-GUIDE-EN.md).
 > Implementation order strictly follows the Phase numbering.
 
 ## Table of Contents
 
-1. [Background: What Is User Mode](#1-background-what-is-user-mode)
-2. [Current Kernel State Analysis](#2-current-kernel-state-analysis)
-3. [Phase 8a: syscall Infrastructure](#3-phase-8a-syscall-infrastructure)
-4. [Phase 8b: User-Mode Address Space](#4-phase-8b-user-mode-address-space)
-5. [Phase 8c: User Process Loading and Execution](#5-phase-8c-user-process-loading-and-execution)
-6. [Phase 8d: ELF Loader](#6-phase-8d-elf-loader)
-7. [Phase 8e: Process Lifecycle](#7-phase-8e-process-lifecycle)
-8. [Phase 8f: Shell Integration](#8-phase-8f-shell-integration)
-9. [Integration and Initialization Order](#9-integration-and-initialization-order)
-10. [QEMU Testing Methods](#10-qemu-testing-methods)
-11. [Security Model Summary](#11-security-model-summary)
+1. [Current Kernel State Analysis](#1-current-kernel-state-analysis)
+2. [Phase 8a: syscall Infrastructure](#2-phase-8a-syscall-infrastructure)
+3. [Phase 8b: User-Mode Address Space](#3-phase-8b-user-mode-address-space)
+4. [Phase 8c: User Process Loading and Execution](#4-phase-8c-user-process-loading-and-execution)
+5. [Phase 8d: ELF Loader](#5-phase-8d-elf-loader)
+6. [Phase 8e: Process Lifecycle](#6-phase-8e-process-lifecycle)
+7. [Phase 8f: Shell Integration](#7-phase-8f-shell-integration)
+8. [Integration and Initialization Order](#8-integration-and-initialization-order)
+9. [QEMU Testing Methods](#9-qemu-testing-methods)
+10. [Appendix: Implementation Order Checklist](#10-appendix-implementation-order-checklist)
 
 ---
 
-## 1. Background: What Is User Mode
+## 1. Current Kernel State Analysis
 
-### 1.1 Protection Rings
-
-The x86_64 CPU has 4 privilege levels (Ring 0-3), but modern operating systems only use two:
-
-```
-Ring 0 (Kernel/Supervisor)            Ring 3 (User)
-┌─────────────────────────┐     ┌─────────────────────────┐
-│ Can execute any instruc. │     │ Cannot execute privileged│
-│ Can access any memory    │     │ Can only access User-    │
-│ Can operate I/O ports    │     │   flagged pages          │
-│ Can modify page tables   │     │ Cannot directly access HW│
-│ Can disable/enable ints  │     │ Cannot modify page tables│
-└─────────────────────────┘     │ Cannot execute CLI/STI   │
-        ↑                       └─────────────────────────┘
-    Our kernel is here now               ↑
-                                  We want programs to run here
-```
-
-**Why have user mode?** Isolation. If all code runs in Ring 0, a buggy program could overwrite kernel memory, manipulate hardware, or corrupt other programs. User mode lets the CPU hardware enforce isolation — when a user program attempts a privileged operation, the CPU raises an exception (#GP or #PF), and the kernel can choose to kill that program without affecting the system.
-
-### 1.2 Privilege Level Switching Mechanisms
-
-Entering user mode from kernel mode ("landing" in Ring 3):
-
-```
-Kernel (Ring 0)                       User Program (Ring 3)
-     │                                  ↑
-     │  Prepare stack frame:            │
-     │  push USER_DATA_SEL (ss)         │
-     │  push user_rsp                   │
-     │  push user_rflags                │
-     │  push USER_CODE_SEL (cs)         │
-     │  push user_rip (program entry)   │
-     │                                  │
-     └──── iretq ───────────────────────┘
-           CPU sees CS RPL=3,
-           automatically switches to Ring 3
-```
-
-Returning to kernel mode from user mode (system call):
-
-```
-User Program (Ring 3)                 Kernel (Ring 0)
-     │                                  ↑
-     │  int 0x80                        │
-     │  or syscall instruction          │
-     └──────────────────────────────────┘
-           CPU automatically:
-           1. Loads RSP0 from TSS (kernel stack)
-           2. Saves user's RIP, CS, RFLAGS, RSP, SS
-           3. Jumps to interrupt handler
-           4. Privilege level becomes Ring 0
-```
-
-### 1.3 Key Hardware Mechanisms
-
-**GDT (Global Descriptor Table)** — already in `gdt.zig`
-
-Our GDT already defines 4 segments:
-
-| Selector | Purpose | DPL | Description |
-|----------|---------|-----|-------------|
-| 0x08 | KERNEL_CODE_SEL | 0 | Kernel code segment |
-| 0x10 | KERNEL_DATA_SEL | 0 | Kernel data segment |
-| 0x18 | USER_DATA_SEL | 3 | User data segment (access=0xF2, DPL=3) |
-| 0x20 | USER_CODE_SEL | 3 | User code segment (access=0xFA, DPL=3) |
-
-> Note that USER_DATA_SEL comes **before** USER_CODE_SEL. This is the layout required by the `syscall`/`sysret` instructions. The `sysret` hardware requires SS = STAR[63:48] and CS = STAR[63:48] + 16. So data comes first, code comes second. Our GDT is already arranged in this order.
-
-**TSS (Task State Segment)** — already in `gdt.zig`
-
-The `rsp0` field in the TSS tells the CPU which kernel stack to switch to when an interrupt/exception occurs in user mode. Every time we switch to a different process, we must update `tss.rsp0` to that process's kernel stack top.
-
-**Page Tables** — already in `vmm.zig`
-
-The `user` parameter of `vmm.mapPage` corresponds to the U/S bit (bit 2) in the page table entry. Pages with the U/S bit set can be accessed by Ring 3 code; pages without it can only be accessed by Ring 0. This is the core of user-mode memory isolation.
-
-### 1.4 What Is a System Call
-
-User programs cannot directly operate hardware, but they need to do I/O (printing, reading files, sending network packets, etc.). How? Through system calls (syscall) — they "request" the kernel to do it on their behalf:
-
-```
-User program:                     Kernel:
-  "I want to print Hello"          Receives syscall
-  → rax = 1 (WRITE)               → Validate parameter legality
-  → rdi = 1 (stdout)              → Copy data from user memory
-  → rsi = buf_ptr                 → Output via serial/VGA
-  → rdx = 5 (length)              → Return bytes written
-  → int 0x80                      → iretq back to user mode
-```
-
-The key principle of this design: **the kernel does not trust any parameters passed by the user**. The pointer from the user might point to kernel memory, might be out of bounds, or might be NULL. The kernel must validate every parameter.
-
-### 1.5 Virtual Address Space Layout
-
-```
-0xFFFF_FFFF_FFFF_FFFF ┐
-                      │ Kernel space (upper half)
-                      │ Kernel code, heap, VGA, MMIO...
-                      │ Page table marked as Supervisor (U/S=0)
-                      │ User-mode code cannot access
-0xFFFF_FFFF_8000_0000 ┤ ← Kernel base address (0xffffffff80000000 in linker.ld)
-         ...          │
-0x0000_8000_0000_0000 ┤ ← Non-canonical address hole (CPU will #GP)
-         ...          │
-0x0000_7FFF_FFFF_FFFF ┤ ← User space upper limit
-                      │
-0x0000_0000_0080_0000 │ ← User program .text load address
-         ...          │
-0x0000_0000_0010_0000 │ ← User heap start
-         ...          │
-0x0000_7FFF_FFFF_0000 │ ← User stack top (grows downward)
-                      │
-0x0000_0000_0000_0000 ┘ ← NULL region (unmapped, access causes #PF)
-```
-
----
-
-## 2. Current Kernel State Analysis
-
-### 2.1 Existing Infrastructure (Can Be Reused Directly)
+### 1.1 Existing Infrastructure (Can Be Reused Directly)
 
 | Component | File | Capability Needed for User Mode | Status |
 |-----------|------|-------------------------------|--------|
@@ -153,7 +32,7 @@ The key principle of this design: **the kernel does not trust any parameters pas
 | Task Management | task.zig | Process concept | **Needs extension** — Currently only has kernel tasks, needs user-mode context |
 | Scheduler | scheduler.zig | Unified scheduling for kernel/user tasks | **Needs minor changes** — Must update TSS.rsp0 on switch |
 
-### 2.2 Parts That Need to Be Added/Modified
+### 1.2 Parts That Need to Be Added/Modified
 
 ```
 New files:
@@ -174,17 +53,7 @@ Files to modify:
 
 ---
 
-## 3. Phase 8a: syscall Infrastructure
-
-### 3.1 Concept: syscall Dispatch
-
-When a user program executes `int 0x80`, the CPU jumps to the handler pointed to by IDT[0x80]. We need to:
-
-1. **Save all registers** (the user program's state must not be lost)
-2. **Read rax** (syscall number)
-3. **Dispatch to the corresponding handler**
-4. **Place the return value in rax**
-5. **Restore registers, iretq back to user mode**
+## 2. Phase 8a: syscall Infrastructure
 
 Register convention (Linux-like):
 
@@ -198,7 +67,7 @@ Register convention (Linux-like):
 | r8 | 5th argument |
 | r9 | 6th argument |
 
-### 3.2 src/syscall.zig — System Call Implementation
+### 2.1 src/syscall.zig — System Call Implementation
 
 #### System Call Numbers
 
@@ -337,15 +206,6 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64;
 7. return count
 ```
 
-> **Security note**: Why can't we use the user-provided pointer directly?
-> 
-> Although our kernel can access all memory, the `buf_ptr` from the user might:
-> - Point to kernel code/data → leaking kernel information
-> - Point to an unmapped page → triggering a kernel page fault (if the kernel doesn't handle it, it crashes)
-> - Point to another process's memory (if we later support multiple address spaces)
-> 
-> Therefore we must first verify that the address falls within the user space range, then verify that the page table actually has a mapping.
-
 ```zig
 /// SYS_READ: Read data from input
 /// fd: file descriptor (0=stdin/keyboard)
@@ -429,17 +289,13 @@ fn sysMmap(addr: u64, length: u64) u64;
 4. return the starting virtual address of the mapping
 ```
 
-### 3.3 Modifying src/idt.zig — syscall Dispatch
+### 2.2 Modifying src/idt.zig — syscall Dispatch
 
 The current `syscallStub` uses `pushRegsAndCall`, which only saves caller-saved registers. It needs to be changed to save the full context and pass arguments:
 
 ```zig
 // Replace the existing syscallStub
 fn syscallStub() callconv(.naked) void {
-    // Save all general-purpose registers
-    // Extract syscall arguments from registers, call syscallDispatch
-    // Place return value into the saved rax position on the stack
-    // Restore registers, iretq
     asm volatile (
         // Save registers
         \\pushq %%rax
@@ -460,8 +316,6 @@ fn syscallStub() callconv(.naked) void {
         //
         // Call syscallDispatch(number=rax, arg1=rdi, arg2=rsi, arg3=rdx, arg4=r10, arg5=r8)
         // System V AMD64 calling convention: rdi, rsi, rdx, rcx, r8, r9
-        // Note register remapping: we need rax→rdi, rdi→rsi, rsi→rdx, rdx→rcx, r10→r8, r8→r9
-        // But these registers have already been pushed to the stack, so read from the stack to avoid conflicts
         \\movq 112(%%rsp), %%rdi   // number = saved rax (15th push, 14*8=112)
         \\movq 64(%%rsp), %%rsi    // arg1 = saved rdi (8th push, 8*8=64)
         \\movq 72(%%rsp), %%rdx    // arg2 = saved rsi (9th push, 9*8=72)
@@ -494,30 +348,27 @@ fn syscallStub() callconv(.naked) void {
 }
 ```
 
-> **Explanation: How are the stack offsets calculated?**
->
-> The push order is rax, rbx, rcx, rdx, rbp, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15.
-> The stack grows downward, so the last push (r15) is at the lowest address (rsp+0).
->
-> ```
-> RSP+112: rax  (1st push)
-> RSP+104: rbx  (2nd push)
-> RSP+96:  rcx  (3rd push)
-> RSP+88:  rdx  (4th push)
-> RSP+80:  rbp  (5th push)
-> RSP+72:  rsi  (6th push)
-> RSP+64:  rdi  (7th push)
-> RSP+56:  r8   (8th push)
-> RSP+48:  r9   (9th push)
-> RSP+40:  r10  (10th push)
-> RSP+32:  r11  (11th push)
-> RSP+24:  r12  (12th push)
-> RSP+16:  r13  (13th push)
-> RSP+8:   r14  (14th push)
-> RSP+0:   r15  (15th push)
-> ```
+Stack layout after the 15 pushes:
 
-### 3.4 User Address Validation Utilities
+```
+RSP+112: rax  (1st push)
+RSP+104: rbx  (2nd push)
+RSP+96:  rcx  (3rd push)
+RSP+88:  rdx  (4th push)
+RSP+80:  rbp  (5th push)
+RSP+72:  rsi  (6th push)
+RSP+64:  rdi  (7th push)
+RSP+56:  r8   (8th push)
+RSP+48:  r9   (9th push)
+RSP+40:  r10  (10th push)
+RSP+32:  r11  (11th push)
+RSP+24:  r12  (12th push)
+RSP+16:  r13  (13th push)
+RSP+8:   r14  (14th push)
+RSP+0:   r15  (15th push)
+```
+
+### 2.3 User Address Validation Utilities
 
 ```zig
 // In syscall.zig
@@ -562,41 +413,11 @@ fn copyToUser(user_dest: u64, src: []const u8) bool {
 
 ---
 
-## 4. Phase 8b: User-Mode Address Space
+## 3. Phase 8b: User-Mode Address Space
 
-### 4.1 Concept: Per-Process Page Tables
+Approach: each user process has its own PML4. The upper half (kernel space) PML4 entries are copied from the kernel page table, while the lower half (user space) is unique to each process.
 
-Currently the entire system shares a single page table (the PML4 pointed to by CR3). All tasks see the exact same virtual address space. This is fine for kernel-mode tasks, but user processes need isolated address spaces.
-
-Approach comparison:
-
-| Approach | Pros | Cons | Choice |
-|----------|------|------|--------|
-| **A. Fully independent page tables** | True process isolation | Need to copy kernel mappings to each new page table | ✓ MVP |
-| B. Shared upper half | Simpler | User processes can see each other's lower half | |
-
-We choose Approach A: each user process has its own PML4. The upper half (kernel space) PML4 entries are copied from the kernel page table, while the lower half (user space) is unique to each process.
-
-```
-Process A's PML4                  Process B's PML4
-┌─────────────────┐            ┌─────────────────┐
-│ [256] kernel ... │ ←──────── │ [256] kernel ... │  Same kernel mappings
-│ [257] kernel ... │            │ [257] kernel ... │
-│ ...              │            │ ...              │
-│ [511] kernel ... │            │ [511] kernel ... │
-├─────────────────┤            ├─────────────────┤
-│ [0] Process A code│           │ [0] Process B code│  Different user mappings
-│ [1] Process A heap│           │ [1] Process B heap│
-│ ...              │            │ ...              │
-│ [255] Process A  │            │ [255] Process B  │
-│       stack      │            │       stack      │
-└─────────────────┘            └─────────────────┘
-```
-
-> The PML4 has 512 entries. Entries [256..511] cover the upper half (0xFFFF800000000000+),
-> entries [0..255] cover the lower half (user space).
-
-### 4.2 src/user_mem.zig — User Address Space Management
+### 3.1 src/user_mem.zig — User Address Space Management
 
 #### Constants
 
@@ -667,7 +488,6 @@ pub fn mapUserPagePhys(as: *AddressSpace, virt: u64, phys: u64, writable: bool) 
 pub fn activate(as: *const AddressSpace) void;
 
 /// Activate the kernel address space (restore original CR3)
-/// Used after returning from user mode to kernel mode, if kernel data structures need to be manipulated
 pub fn activateKernel() void;
 
 /// Release all page frames of the user address space
@@ -704,15 +524,6 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 7. return as
 ```
 
-> **Explanation: Why is copying the PML4 upper half sufficient?**
->
-> PML4 entries point to PDPTs. The kernel's PDPT/PD/PT are globally shared — we only copied the
-> pointers in the PML4, not a deep copy of the entire page table tree. This means:
-> - All processes see the exact same kernel memory mappings (because they point to the same PDPT)
-> - If the kernel later adds mappings (modifying PDPT/PD/PT), all processes automatically see them
-> - But if the kernel adds new PML4 entries (new 512GB regions), they need to be synced to all processes' PML4s
->   (for the MVP this won't happen — the kernel only uses PML4 entry [511])
-
 #### activate() Internal Logic
 
 ```
@@ -726,9 +537,7 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 ```
 1. If page_count >= MAX_USER_PAGES → return false
 2. phys = pmm.allocFrame() or return false
-3. Need to map in as's page table, not the currently active page table
-   The issue here: vmm.mapPage operates on the page table pointed to by the current CR3
-   Solution: temporarily switch CR3 → map → switch back
+3. Temporarily switch CR3 → map → switch back:
    a. saved_cr3 = cpu.readCr3()
    b. cpu.writeCr3(as.pml4_phys)
    c. vmm.mapPage(virt, phys, writable, user=true)
@@ -737,14 +546,6 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 5. page_count += 1
 6. return true
 ```
-
-> **Explanation: Why do we need to temporarily switch CR3?**
->
-> `vmm.mapPage` reads and writes page tables using the PML4 address obtained via `cpu.readCr3()`.
-> If we don't switch CR3, `mapPage` would modify the currently active page table (the kernel's), not the new process's.
-> Switch CR3 → map → switch back ensures we are operating on the target address space's page table.
->
-> An alternative approach would be to modify vmm to accept an explicit PML4 address, but that requires larger changes. Temporarily switching CR3 is sufficient for the MVP.
 
 #### destroy() Internal Logic
 
@@ -761,9 +562,7 @@ pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool;
 
 ---
 
-## 5. Phase 8c: User Process Loading and Execution
-
-### 5.1 Concept: Jumping from Kernel to User Mode
+## 4. Phase 8c: User Process Loading and Execution
 
 Getting a user program running requires these steps:
 
@@ -773,32 +572,19 @@ Getting a user program running requires these steps:
 3. Switch to the user address space (write CR3)
 4. Set TSS.rsp0 = this process's kernel stack top
 5. Jump to Ring 3 via iretq
-
-Detailed look at step 5:
-
-            Kernel Stack
-     ┌──────────────────┐
-     │ SS = USER_DATA_SEL│  0x18 | 3 = 0x1B (RPL=3)
-     │ RSP = user_stack  │  User stack top
-     │ RFLAGS = 0x202    │  IF=1 (interrupts enabled)
-     │ CS = USER_CODE_SEL│  0x20 | 3 = 0x23 (RPL=3)
-     │ RIP = entry_point │  Program entry address
-     └──────────────────┘
-              ↓
-           iretq
-              ↓
-     CPU sees CS.RPL = 3
-     Switches to Ring 3
-     Loads SS:RSP as user stack
-     Jumps to RIP and begins execution
 ```
 
-> **Key detail**: The lower 2 bits of CS and SS are the RPL (Requested Privilege Level).
-> `USER_CODE_SEL = 0x20`, plus RPL=3 → `0x23`.
-> `USER_DATA_SEL = 0x18`, plus RPL=3 → `0x1B`.
-> The CPU uses the RPL to determine privilege level switching.
+The iretq frame constructed on the kernel stack:
 
-### 5.2 src/process.zig — Process Management
+```
+SS = USER_DATA_SEL | 3 = 0x1B (RPL=3)
+RSP = user_stack (user stack top)
+RFLAGS = 0x202 (IF=1)
+CS = USER_CODE_SEL | 3 = 0x23 (RPL=3)
+RIP = entry_point
+```
+
+### 4.1 src/process.zig — Process Management
 
 This is a high-level wrapper over task.zig, adding user-mode support.
 
@@ -916,15 +702,6 @@ pub fn getKernelCr3() u64;
 7. return pid
 ```
 
-> **Explanation: Why does each user process need an independent kernel stack?**
->
-> When a user program is executing in Ring 3 and an interrupt occurs (e.g., the PIT timer), the CPU needs to switch to Ring 0.
-> The CPU gets the kernel stack pointer from TSS.rsp0 and saves the user's register state there.
->
-> If two user processes shared a kernel stack, the state saved on the kernel stack when process A is interrupted
-> could be overwritten by process B's interrupt. So each user process must have its own kernel stack,
-> and TSS.rsp0 must be updated on every context switch.
-
 #### onContextSwitch() Internal Logic
 
 ```
@@ -937,7 +714,7 @@ pub fn getKernelCr3() u64;
    cpu.writeCr3(process_info.address_space.pml4_phys)
 ```
 
-### 5.3 Modifying src/task.zig — Adding User-Mode Fields
+### 4.2 Modifying src/task.zig — Adding User-Mode Fields
 
 Minimal field changes to the Task struct:
 
@@ -961,11 +738,9 @@ pub const Task = struct {
 };
 ```
 
-> Minimally invasive change. Detailed user-mode information (address space, kernel stack, etc.) is stored
-> in process.zig's process_table, linked by pid. We avoid stuffing too much into Task to maintain
-> existing code compatibility.
+Detailed user-mode information (address space, kernel stack, etc.) is stored in process.zig's process_table, linked by pid.
 
-### 5.4 Modifying src/scheduler.zig — Updating TSS on Context Switch
+### 4.3 Modifying src/scheduler.zig — Updating TSS on Context Switch
 
 ```zig
 // In switchFromContext, after switching to the new task:
@@ -996,43 +771,9 @@ for (0..task.MAX_TASKS) |i| {
 
 ---
 
-## 6. Phase 8d: ELF Loader
+## 5. Phase 8d: ELF Loader
 
-### 6.1 Concept: What Is ELF
-
-ELF (Executable and Linkable Format) is the standard executable file format in the Linux/Unix world. When you compile a C/Zig program, the output is an ELF file.
-
-ELF file structure (simplified):
-
-```
-┌──────────────────────────┐
-│ ELF Header (64 bytes)    │  "What is this file"
-│   magic: 0x7F 'E' 'L' 'F'│
-│   class: 64-bit          │
-│   entry: program entry    │
-│   phoff: Program Header   │
-│          offset           │
-│   phnum: Program Header   │
-│          count            │
-├──────────────────────────┤
-│ Program Headers          │  "How to load into memory"
-│   [0] LOAD: load code seg│   vaddr=0x400000, filesz=0x1000
-│   [1] LOAD: load data seg│   vaddr=0x401000, filesz=0x100
-│   ...                    │
-├──────────────────────────┤
-│ .text (code)             │  Actual machine instructions
-├──────────────────────────┤
-│ .rodata (read-only data) │  String constants, etc.
-├──────────────────────────┤
-│ .data (writable data)    │  Global variable initial values
-├──────────────────────────┤
-│ .bss (zero-initialized)  │  Global variables (no space in file)
-└──────────────────────────┘
-```
-
-The loader only cares about **Program Headers** (not Section Headers). Each PT_LOAD type Program Header tells us: which segment of the file to load, and at what virtual address to place it.
-
-### 6.2 src/elf.zig — ELF Parser
+### 5.1 src/elf.zig — ELF Parser
 
 #### Constants
 
@@ -1225,52 +966,11 @@ fn readLe64(data: []const u8, offset: usize) u64 {
 }
 ```
 
-> **Note**: ELF files use little-endian byte order, which is the same as our x86_64 CPU's byte order.
-> This is the opposite of network protocols (big-endian). That's why we use readLe16 rather than readBe16 here.
-
 ---
 
-## 7. Phase 8e: Process Lifecycle
+## 6. Phase 8e: Process Lifecycle
 
-### 7.1 Concept: The Life of a Process
-
-```
-          spawnFlat / spawnUser
-                  │
-                  ↓
-            ┌──────────┐
-            │  READY   │ ←─── Created, waiting to be scheduled
-            └────┬─────┘
-                 │ Selected by the scheduler
-                 ↓
-            ┌──────────┐
-            │ RUNNING  │ ←─── Executing on CPU (Ring 3)
-            └─┬──┬──┬──┘
-              │  │  │
-   Interrupt/ │  │  │ SYS_SLEEP
-   syscall    │  │  ↓
-              │  │ ┌──────────┐
-              │  │ │ BLOCKED  │ ←── Waiting on condition (sleep, I/O)
-              │  │ └────┬─────┘
-              │  │      │ Condition met (wake_tick reached)
-              │  │      ↓
-              │  │   Back to READY
-              │  │
-              │  │ SYS_EXIT
-              │  ↓
-              │ ┌──────────┐
-              │ │ FINISHED │ ←── Process ended, awaiting cleanup
-              │ └──────────┘
-              │       │
-              │       ↓ Reclaim resources
-              │    (slot freed)
-              │
-              │ Time slice expired
-              ↓
-          Back to READY (preemption)
-```
-
-### 7.2 First Jump from Kernel Mode to User Mode
+### 6.1 First Jump from Kernel Mode to User Mode
 
 When a newly created user process is scheduled for the first time, it needs to "jump" from kernel mode to Ring 3. This is achieved by constructing a fake interrupt return frame on the kernel stack:
 
@@ -1310,22 +1010,15 @@ fn buildUserInitialStack(kernel_stack_top: u64, entry: u64, user_stack_top: u64)
 
 When the scheduler selects this task, `switchFromContext` returns this RSP. The interrupt return path pops 15 registers and then executes `iretq`. The CPU sees CS.RPL=3 and automatically switches to Ring 3 to execute user code.
 
-> **Explanation: This is an elegant trick**
->
-> We don't have a dedicated "enter user mode" instruction. Instead, we reuse the interrupt return mechanism —
-> `iretq` doesn't know whether it's actually "returning"; it simply pops RIP/CS/RFLAGS/RSP/SS from the stack and jumps.
-> If we set CS to a user-mode selector, iretq will "return" to a user-mode program that was never "interrupted" in the first place.
-> All operating systems use this trick.
-
 ---
 
-## 8. Phase 8f: Shell Integration
+## 7. Phase 8f: Shell Integration
 
-### 8.1 Embedded Test Programs
+### 7.1 Embedded Test Programs
 
 In the MVP phase, we don't load ELF files from disk. Instead, we embed a few simple user-mode test programs (written in assembly, as byte arrays) directly in the kernel.
 
-#### Test Program 1: hello_user (minimal viable program)
+#### Test Program 1: hello_user
 
 ```zig
 // In shell_cmds.zig or a separate user_programs.zig
@@ -1355,15 +1048,7 @@ pub const hello_user = [_]u8{
 };
 ```
 
-> **Explanation: Why hand-written machine code?**
->
-> User programs run in Ring 3, in a completely different address space. They cannot call kernel Zig functions;
-> the only way to communicate is through system calls (int 0x80). The simplest way to test is to hand-write a few instructions.
->
-> Later, we can cross-compile user-mode programs with Zig (target: x86_64-freestanding-none),
-> link them at a fixed address, and output flat binary or ELF.
-
-#### Test Program 2: loop_user (test preemption)
+#### Test Program 2: loop_user
 
 ```zig
 /// Infinite loop program: test whether user-mode preemption works
@@ -1389,7 +1074,26 @@ pub const loop_user = [_]u8{
 };
 ```
 
-### 8.2 New Shell Commands
+#### Test Program 3: bad_cli / bad_read (protection mechanism tests)
+
+```zig
+/// Attempt to execute CLI (privileged instruction), should be killed
+pub const bad_cli = [_]u8{
+    0xFA,       // cli — not allowed in Ring 3
+    0xEB, 0xFE, // jmp $ (should never reach here)
+};
+
+/// Attempt to read kernel memory, should trigger Page Fault
+pub const bad_read = [_]u8{
+    // mov rax, 0xFFFFFFFF80000000  ; kernel address
+    0x48, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0xFF,
+    // mov al, [rax]               ; attempt to read
+    0x8A, 0x00,
+    0xEB, 0xFE, // jmp $
+};
+```
+
+### 7.2 New Shell Commands
 
 ```zig
 // Add to the commands array in shell_cmds.zig
@@ -1454,9 +1158,9 @@ Syscall statistics:
 
 ---
 
-## 9. Integration and Initialization Order
+## 8. Integration and Initialization Order
 
-### 9.1 src/main.zig Modifications
+### 8.1 src/main.zig Modifications
 
 Add to the existing initialization sequence:
 
@@ -1471,7 +1175,7 @@ process.init();
 log.kprintln("[proc] Process subsystem initialized", .{});
 ```
 
-### 9.2 Initialization Dependency Chain
+### 8.2 Initialization Dependency Chain
 
 ```
 gdt.init()      ← GDT + TSS (existing)
@@ -1491,7 +1195,7 @@ process.init()  ← New: save kernel CR3, initialize process_table
 scheduler.init() ← Scheduler (minor changes)
 ```
 
-### 9.3 New Files List
+### 8.3 New Files List
 
 ```
 src/
@@ -1502,7 +1206,7 @@ src/
 └── user_programs.zig # Embedded user-mode test programs (machine code)
 ```
 
-### 9.4 Modified Files List
+### 8.4 Modified Files List
 
 ```
 src/idt.zig          # syscallStub changed to full syscall dispatch
@@ -1515,9 +1219,9 @@ src/main.zig         # Add process.init() call
 
 ---
 
-## 10. QEMU Testing Methods
+## 9. QEMU Testing Methods
 
-### 10.1 Testing hello_user
+### 9.1 Testing hello_user
 
 ```
 MerlionOS> runuser hello
@@ -1526,13 +1230,7 @@ Hello from Ring 3!
 Process 'hello' exited with code 0
 ```
 
-If you see "Hello from Ring 3!", it means:
-- User address space creation succeeded
-- Ring 0 → Ring 3 transition succeeded
-- int 0x80 → syscall dispatch → SYS_WRITE succeeded
-- SYS_EXIT correctly reclaimed the process
-
-### 10.2 Testing loop_user + Preemption
+### 9.2 Testing loop_user + Preemption
 
 ```
 MerlionOS> runuser loop &     # Run in background (if supported)
@@ -1545,33 +1243,14 @@ MerlionOS> killuser 3
 Killed process 3
 ```
 
-### 10.3 Testing Protection Mechanisms
+### 9.3 Testing Protection Mechanisms
 
 ```
 # User program attempts to execute a privileged instruction → should trigger #GP, kernel kills the process
 # User program attempts to access a kernel address → should trigger #PF, kernel kills the process
 ```
 
-Dedicated test programs can be created:
-
-```zig
-/// Attempt to execute CLI (privileged instruction), should be killed
-pub const bad_cli = [_]u8{
-    0xFA,       // cli — not allowed in Ring 3
-    0xEB, 0xFE, // jmp $ (should never reach here)
-};
-
-/// Attempt to read kernel memory, should trigger Page Fault
-pub const bad_read = [_]u8{
-    // mov rax, 0xFFFFFFFF80000000  ; kernel address
-    0x48, 0xB8, 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF, 0xFF, 0xFF,
-    // mov al, [rax]               ; attempt to read
-    0x8A, 0x00,
-    0xEB, 0xFE, // jmp $
-};
-```
-
-### 10.4 Test Case Checklist
+### 9.4 Test Case Checklist
 
 ```
 - [ ] hello_user: prints and exits normally
@@ -1585,33 +1264,7 @@ pub const bad_read = [_]u8{
 
 ---
 
-## 11. Security Model Summary
-
-```
-Protection layers:
-
-1. CPU Hardware (Ring 0 vs Ring 3)
-   - User code cannot execute CLI/STI/HLT/LGDT/LIDT/MOV CR*/IN/OUT and other privileged instructions
-   - Violation → #GP exception → kernel catches it → kills the process
-
-2. Page Tables (U/S bit)
-   - User pages marked U/S=1, kernel pages U/S=0
-   - Ring 3 code accessing a page with U/S=0 → #PF exception → kernel catches it → kills the process
-
-3. System Call Parameter Validation
-   - All user-provided pointers must be validated to be within the user address space
-   - All user-provided lengths must be validated to not exceed bounds
-   - The kernel does not directly dereference user pointers (copies to kernel buffer first)
-
-4. TSS.rsp0 Switching
-   - TSS.rsp0 is updated on every context switch
-   - Ensures the correct process's kernel stack is used when an interrupt occurs
-   - Prevents information leakage between processes via the kernel stack
-```
-
----
-
-## Appendix: Implementation Order Checklist
+## 10. Appendix: Implementation Order Checklist
 
 ```
 Phase 8a: syscall Infrastructure
