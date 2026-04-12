@@ -26,6 +26,8 @@ pub const Task = struct {
     run_count: u64 = 0,
     yield_count: u64 = 0,
     priority: u8 = 128,
+    is_user: bool = false,
+    wake_tick: u64 = 0,
 };
 
 pub const KillResult = enum {
@@ -92,6 +94,29 @@ pub fn spawn(name: []const u8, entry_fn: TaskEntryFn) ?u32 {
     return new_task.pid;
 }
 
+pub fn spawnUser(name: []const u8, entry_point: u64, user_stack_top: u64) ?u32 {
+    const index = allocSlot() orelse return null;
+    const stack_slot = allocStack() orelse return null;
+
+    var new_task = Task{
+        .pid = next_pid,
+        .state = .ready,
+        .stack_slot = stack_slot,
+        .is_user = true,
+    };
+    setName(&new_task, name);
+
+    new_task.stack_bottom = @intFromPtr(&stack_pool[stack_slot][0]);
+    new_task.stack_top = new_task.stack_bottom + STACK_SIZE;
+    const canary_ptr: *volatile u64 = @ptrFromInt(new_task.stack_bottom);
+    canary_ptr.* = STACK_CANARY;
+    new_task.rsp = buildUserInitialStack(new_task.stack_top, entry_point, user_stack_top);
+
+    tasks[index] = new_task;
+    next_pid += 1;
+    return new_task.pid;
+}
+
 pub fn kill(pid: u32) KillResult {
     const index = findIndexByPid(pid) orelse return .not_found;
     if (current_task_index != null and current_task_index.? == index) return .busy_current;
@@ -124,6 +149,10 @@ pub fn getTask(index: usize) ?*Task {
 
 pub fn getCurrentIndex() ?usize {
     return current_task_index;
+}
+
+pub fn indexOfPid(pid: u32) ?usize {
+    return findIndexByPid(pid);
 }
 
 pub fn setCurrentIndex(index: usize) void {
@@ -246,6 +275,34 @@ fn buildInitialStack(stack_top: u64, entry_fn: TaskEntryFn) u64 {
     pushStack(&sp, 0); // r11
     pushStack(&sp, @intFromPtr(entry_fn)); // r12
     pushStack(&sp, stack_top); // r13
+    pushStack(&sp, 0); // r14
+    pushStack(&sp, 0); // r15
+
+    return sp;
+}
+
+fn buildUserInitialStack(stack_top: u64, entry_point: u64, user_stack_top: u64) u64 {
+    var sp = stack_top;
+
+    pushStack(&sp, gdt.USER_DATA_SEL | 3); // ss
+    pushStack(&sp, user_stack_top); // rsp
+    pushStack(&sp, INITIAL_RFLAGS);
+    pushStack(&sp, gdt.USER_CODE_SEL | 3);
+    pushStack(&sp, entry_point);
+
+    pushStack(&sp, 0); // rax
+    pushStack(&sp, 0); // rbx
+    pushStack(&sp, 0); // rcx
+    pushStack(&sp, 0); // rdx
+    pushStack(&sp, 0); // rbp
+    pushStack(&sp, 0); // rsi
+    pushStack(&sp, 0); // rdi
+    pushStack(&sp, 0); // r8
+    pushStack(&sp, 0); // r9
+    pushStack(&sp, 0); // r10
+    pushStack(&sp, 0); // r11
+    pushStack(&sp, 0); // r12
+    pushStack(&sp, 0); // r13
     pushStack(&sp, 0); // r14
     pushStack(&sp, 0); // r15
 

@@ -1,3 +1,4 @@
+const process = @import("process.zig");
 const task = @import("task.zig");
 
 pub const DEFAULT_QUANTUM: u64 = 10;
@@ -103,6 +104,7 @@ fn switchFromContext(current_rsp: u64) u64 {
     task.setCurrentIndex(next_index);
     new_task.run_count += 1;
     context_switches += 1;
+    process.onContextSwitch(next_index);
 
     return new_task.rsp;
 }

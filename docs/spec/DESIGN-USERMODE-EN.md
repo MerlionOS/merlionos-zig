@@ -1277,11 +1277,11 @@ Phase 8b: User Address Space
 - [x] Verify: `usermemtest` creates an address space, maps user pages, switches CR3, restores kernel CR3, and does not crash
 
 Phase 8c: User Processes
-- [ ] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent
-- [ ] src/user_programs.zig — hello_user machine code
-- [ ] Modify src/task.zig — add is_user, wake_tick
-- [ ] Modify src/scheduler.zig — call process.onContextSwitch on switch
-- [ ] Verify: runuser hello prints "Hello from Ring 3!"
+- [x] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent
+- [x] src/user_programs.zig — hello_user machine code
+- [x] Modify src/task.zig — add is_user, wake_tick
+- [x] Modify src/scheduler.zig — call process.onContextSwitch on switch
+- [x] Verify: runuser hello prints "Hello from Ring 3!"
 
 Phase 8d: ELF Loader
 - [ ] src/elf.zig — parse / load
@@ -1293,8 +1293,9 @@ Phase 8e: Process Lifecycle
 - [ ] Verify: loop_user + preemption + killuser
 
 Phase 8f: Shell Integration
-- [ ] shell_cmds.zig: runuser / ps / killuser
+- [x] shell_cmds.zig: runuser / ps user-mode display
+- [ ] shell_cmds.zig: killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] Verify: all test cases
-- [ ] main.zig: add process.init()
+- [x] main.zig: add process.init()
 ```

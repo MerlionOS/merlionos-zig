@@ -1278,11 +1278,11 @@ Phase 8b: 用户地址空间
 - [x] 验证: `usermemtest` 创建地址空间，映射用户页，切换 CR3 并恢复内核 CR3，不崩
 
 Phase 8c: 用户进程
-- [ ] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent
-- [ ] src/user_programs.zig — hello_user 机器码
-- [ ] 修改 src/task.zig — 增加 is_user, wake_tick
-- [ ] 修改 src/scheduler.zig — 切换时调用 process.onContextSwitch
-- [ ] 验证: runuser hello 打印 "Hello from Ring 3!"
+- [x] src/process.zig — init / spawnFlat / onContextSwitch / exitCurrent
+- [x] src/user_programs.zig — hello_user 机器码
+- [x] 修改 src/task.zig — 增加 is_user, wake_tick
+- [x] 修改 src/scheduler.zig — 切换时调用 process.onContextSwitch
+- [x] 验证: runuser hello 打印 "Hello from Ring 3!"
 
 Phase 8d: ELF 加载器
 - [ ] src/elf.zig — parse / load
@@ -1294,8 +1294,9 @@ Phase 8e: 进程生命周期
 - [ ] 验证: loop_user + 抢占 + killuser
 
 Phase 8f: Shell 集成
-- [ ] shell_cmds.zig: runuser / ps / killuser
+- [x] shell_cmds.zig: runuser / ps 用户态显示
+- [ ] shell_cmds.zig: killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] 验证: 所有测试用例
-- [ ] main.zig: 添加 process.init()
+- [x] main.zig: 添加 process.init()
 ```

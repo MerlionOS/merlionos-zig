@@ -49,9 +49,15 @@ pub fn init() void {
 }
 
 pub fn create() ?AddressSpace {
+    var as: AddressSpace = undefined;
+    if (!createInto(&as)) return null;
+    return as;
+}
+
+pub fn createInto(as: *AddressSpace) bool {
     if (kernel_cr3 == 0) init();
 
-    const pml4_phys = pmm.allocFrame() orelse return null;
+    const pml4_phys = pmm.allocFrame() orelse return false;
     const pml4: *PageTable = @ptrFromInt(pmm.physToVirt(pml4_phys));
     @memset(pml4[0..], 0);
 
@@ -60,23 +66,23 @@ pub fn create() ?AddressSpace {
         pml4[i] = kernel_pml4[i];
     }
 
-    var as = AddressSpace{
-        .pml4_phys = pml4_phys,
-        .page_count = 0,
-        .pages = [_]PageRecord{emptyPageRecord()} ** MAX_USER_PAGES,
-        .brk = USER_HEAP_BASE,
-        .mmap_next = USER_MMAP_BASE,
-    };
+    as.pml4_phys = pml4_phys;
+    as.page_count = 0;
+    as.brk = USER_HEAP_BASE;
+    as.mmap_next = USER_MMAP_BASE;
+    for (&as.pages) |*record| {
+        record.* = emptyPageRecord();
+    }
 
     var stack_page = USER_STACK_TOP - USER_STACK_SIZE;
     while (stack_page < USER_STACK_TOP) : (stack_page += PAGE_SIZE) {
-        if (!mapUserPage(&as, stack_page, true)) {
-            destroy(&as);
-            return null;
+        if (!mapUserPage(as, stack_page, true)) {
+            destroy(as);
+            return false;
         }
     }
 
-    return as;
+    return true;
 }
 
 pub fn mapUserPage(as: *AddressSpace, virt: u64, writable: bool) bool {

@@ -123,16 +123,17 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 
 ### Phase 10: User Mode (current)
 - [x] User mode design document: `docs/spec/DESIGN-USERMODE.md`
-- [x] Syscall infrastructure: `int 0x80` dispatch, `SYS_WRITE`, `SYS_GETPID`, `SYS_EXIT` shim, syscall stats
+- [x] Syscall infrastructure: `int 0x80` dispatch, `SYS_WRITE`, `SYS_GETPID`, `SYS_EXIT` teardown, syscall stats
 - [x] `syscallstat` shell command for dispatcher stats
-- [ ] User process teardown for `SYS_EXIT` once `process.zig` exists
 - [x] User address space management in `user_mem.zig`
 - [x] `usermemtest` shell command verifies user page mapping and CR3 restore
-- [ ] User process loading and context switching via `process.zig`, `user_programs.zig`, `task.zig`, and `scheduler.zig`
+- [x] User process loading and context switching via `process.zig`, `user_programs.zig`, `task.zig`, and `scheduler.zig`
+- [x] Built-in `hello_user` flat program runs through Ring 3, `SYS_WRITE`, and `SYS_EXIT`
+- [x] Shell integration: `runuser hello` and user/process details in `ps`
 - [ ] ELF loader in `elf.zig`
 - [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_YIELD`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
-- [ ] Shell integration: `runuser`, `killuser`, and user/process details in `ps`
-- [ ] Protection and scheduling tests: `hello_user`, `loop_user`, `bad_cli`, `bad_read`, and multi-process preemption
+- [ ] Shell integration: `killuser`
+- [ ] Protection and scheduling tests: `loop_user`, `bad_cli`, `bad_read`, and multi-process preemption
 
 ## Zig vs Rust: Why Rewrite?
 

@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const log = @import("log.zig");
+const process = @import("process.zig");
 const task = @import("task.zig");
 const vmm = @import("vmm.zig");
 
@@ -118,10 +119,8 @@ fn dispatch(ctx: SyscallContext) u64 {
 }
 
 fn sysExit(exit_code: u64) u64 {
-    if (task.currentPid()) |pid| {
-        log.kprintln("[sys] exit pid={d} code={d} (process teardown pending)", .{ pid, exit_code });
-    }
-    return 0;
+    const code: i32 = @bitCast(@as(u32, @truncate(exit_code)));
+    process.exitCurrent(code);
 }
 
 fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64 {

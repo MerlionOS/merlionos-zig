@@ -77,6 +77,10 @@ pub fn setKernelStack(stack_top: u64) void {
     tss.rsp0 = stack_top;
 }
 
+pub fn defaultKernelStack() u64 {
+    return @intFromPtr(&interrupt_stack) + interrupt_stack.len;
+}
+
 fn makeEntry(base: u32, limit: u32, access: u8, flags: u8) u64 {
     return (@as(u64, limit & 0xFFFF)) |
         (@as(u64, base & 0xFFFF) << 16) |

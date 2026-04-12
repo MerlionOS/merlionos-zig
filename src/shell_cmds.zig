@@ -12,12 +12,14 @@ const net = @import("net.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
+const process = @import("process.zig");
 const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
 const socket = @import("socket.zig");
 const syscall = @import("syscall.zig");
 const task = @import("task.zig");
 const user_mem = @import("user_mem.zig");
+const user_programs = @import("user_programs.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
 
@@ -57,6 +59,7 @@ const commands = [_]Command{
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
+    .{ .name = "runuser", .description = "Run a built-in user-mode program", .handler = cmdRunuser },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
     .{ .name = "syscallstat", .description = "Show syscall statistics", .handler = cmdSyscallstat },
     .{ .name = "tcpclose", .description = "Close a TCP connection", .handler = cmdTcpclose },
@@ -1063,7 +1066,7 @@ fn cmdPs(_: []const u8) void {
         return;
     }
 
-    log.kprintln("PID  STATE    TICKS  RUNS   YIELDS PRIO  NAME", .{});
+    log.kprintln("PID  STATE    TICKS  RUNS   YIELDS PRIO  TYPE NAME", .{});
     task.forEach(printTaskRow);
     log.kprintln("Scheduler: tick={d} quantum={d} yields={d} slices={d} switches={d}", .{
         scheduler.getTickCount(),
@@ -1127,6 +1130,21 @@ fn cmdRm(args: []const u8) void {
         .busy => log.kprintln("rm: cannot remove {s}", .{path}),
         .not_empty => log.kprintln("rm: directory not empty: {s}", .{path}),
     }
+}
+
+fn cmdRunuser(args: []const u8) void {
+    const name = trimSpaces(args);
+    if (name.len == 0 or strEql(name, "hello")) {
+        const pid = process.spawnFlat("hello_user", user_programs.hello[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn hello", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned hello pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
+
+    log.kprintln("Usage: runuser [hello]", .{});
 }
 
 fn cmdTouch(args: []const u8) void {
@@ -1238,13 +1256,14 @@ fn cmdVersion(_: []const u8) void {
 }
 
 fn printTaskRow(task_entry: *const task.Task, is_current: bool) void {
-    log.kprintln("{d: <4} {s: <8} {d: <6} {d: <6} {d: <6} {d: <5} {s}{s}", .{
+    log.kprintln("{d: <4} {s: <8} {d: <6} {d: <6} {d: <6} {d: <5} {s: <4} {s}{s}", .{
         task_entry.pid,
         @tagName(task_entry.state),
         task_entry.ticks,
         task_entry.run_count,
         task_entry.yield_count,
         task_entry.priority,
+        if (task_entry.is_user) "user" else "kern",
         task.nameSlice(task_entry),
         if (is_current) " *" else "",
     });

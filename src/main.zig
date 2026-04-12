@@ -11,6 +11,7 @@ const idt = @import("idt.zig");
 const pic = @import("pic.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
+const process = @import("process.zig");
 const heap = @import("heap.zig");
 const pci = @import("pci.zig");
 const e1000 = @import("e1000.zig");
@@ -173,6 +174,7 @@ export fn _start() callconv(.c) noreturn {
 
     task.init();
     scheduler.init();
+    process.init();
     if (task.registerBootTask("shell")) |pid| {
         log.kprintln("[task] Boot task registered: shell (pid {d})", .{pid});
     } else {
