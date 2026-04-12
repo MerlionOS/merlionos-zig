@@ -110,17 +110,17 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] OpenAI Responses API host bridge adapter
 
 ### Phase 9: TCP/IP Stack (current)
-- [x] TCP/IP stack design document: `docs/DESIGN-TCPIP.md`
+- [x] TCP/IP stack design document: `docs/spec/DESIGN-TCPIP.md`
 - [x] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
 - [x] Ethernet frame send/receive dispatch layer and `netpoll`
 - [x] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
 - [x] IPv4 send/receive/routing layer and ICMP migration onto IPv4
 - [x] UDP datagram send/receive path
-- [x] Shell commands: `netpoll`, `arp`, `udpsend`
-- [ ] TCP connection state machine with connect/send/recv/close
+- [x] Shell commands: `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`
+- [x] TCP connection state machine with connect/send/recv/close
 - [ ] DNS A-record client over UDP
 - [ ] Socket-like API for future shell/userland integration
-- [ ] Shell commands: `ifconfig`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`
+- [ ] Shell commands: `ifconfig`, `dns`, `httpget`
 
 ## Zig vs Rust: Why Rewrite?
 

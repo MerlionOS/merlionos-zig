@@ -12,6 +12,7 @@ const pmm = @import("pmm.zig");
 const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
 const task = @import("task.zig");
+const tcp = @import("tcp.zig");
 const udp = @import("udp.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
@@ -50,6 +51,11 @@ const commands = [_]Command{
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
+    .{ .name = "tcpclose", .description = "Close a TCP connection", .handler = cmdTcpclose },
+    .{ .name = "tcpconnect", .description = "Open a TCP connection", .handler = cmdTcpconnect },
+    .{ .name = "tcprecv", .description = "Read data from a TCP connection", .handler = cmdTcprecv },
+    .{ .name = "tcpsend", .description = "Send data on a TCP connection", .handler = cmdTcpsend },
+    .{ .name = "tcpstat", .description = "Show TCP connection states", .handler = cmdTcpstat },
     .{ .name = "touch", .description = "Create an empty file", .handler = cmdTouch },
     .{ .name = "tree", .description = "Show a directory tree", .handler = cmdTree },
     .{ .name = "udpsend", .description = "Send a UDP datagram", .handler = cmdUdpsend },
@@ -469,6 +475,18 @@ fn cmdNetinfo(_: []const u8) void {
         udp_stats.last_src_port,
         udp_stats.last_dst_port,
     });
+    const tcp_stats = tcp.getStats();
+    log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} send_errors={d} last_tx={s}", .{
+        tcp_stats.segments_received,
+        tcp_stats.segments_sent,
+        tcp_stats.connections_opened,
+        tcp_stats.connections_closed,
+        tcp_stats.retransmits,
+        tcp_stats.resets_sent,
+        tcp_stats.bad_checksum,
+        tcp_stats.send_errors,
+        @tagName(tcp_stats.last_send_status),
+    });
     const cache_stats = arp_cache.getStats();
     log.kprintln("ARP cache: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
         cache_stats.lookups,
@@ -495,6 +513,7 @@ fn cmdNetpoll(args: []const u8) void {
 
     const processed = eth.pollAll(count);
     arp_cache.tick();
+    tcp.tick();
     const stats = eth.getStats();
     log.kprintln("netpoll: processed={d} requested={d} last={s}", .{
         processed,
@@ -527,6 +546,17 @@ fn cmdNetpoll(args: []const u8) void {
         udp_stats.malformed,
         udp_stats.no_binding,
         udp_stats.send_errors,
+    });
+    const tcp_stats = tcp.getStats();
+    log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} send_errors={d}", .{
+        tcp_stats.segments_received,
+        tcp_stats.segments_sent,
+        tcp_stats.connections_opened,
+        tcp_stats.connections_closed,
+        tcp_stats.retransmits,
+        tcp_stats.resets_sent,
+        tcp_stats.bad_checksum,
+        tcp_stats.send_errors,
     });
 }
 
@@ -657,6 +687,129 @@ fn cmdUdpsend(args: []const u8) void {
     });
     if (status == .arp_pending) {
         log.kprintln("Run netpoll and retry after ARP resolves.", .{});
+    }
+}
+
+fn cmdTcpconnect(args: []const u8) void {
+    var rest = trimSpaces(args);
+    const ip_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: tcpconnect <ip> <port>", .{});
+        return;
+    };
+    const port_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: tcpconnect <ip> <port>", .{});
+        return;
+    };
+
+    const target_ip = parseIpv4(ip_token) orelse {
+        log.kprintln("Usage: tcpconnect <ip> <port>", .{});
+        return;
+    };
+    const target_port = parseU16(port_token) orelse {
+        log.kprintln("Usage: tcpconnect <ip> <port>", .{});
+        return;
+    };
+
+    var conn_id: tcp.ConnId = 0;
+    const result = tcp.connect(target_ip, target_port, &conn_id);
+    log.kprintln("tcpconnect: {s}", .{@tagName(result)});
+    if (result == .ok) {
+        const stats = tcp.getStats();
+        log.kprintln("TCP conn={d} -> {d}.{d}.{d}.{d}:{d} state=syn_sent tx={s}", .{
+            conn_id,
+            target_ip[0],
+            target_ip[1],
+            target_ip[2],
+            target_ip[3],
+            target_port,
+            @tagName(stats.last_send_status),
+        });
+        if (stats.last_send_status == .arp_pending) {
+            log.kprintln("Run netpoll and retry after ARP resolves.", .{});
+        }
+    }
+}
+
+fn cmdTcpsend(args: []const u8) void {
+    var rest = trimSpaces(args);
+    const conn_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: tcpsend <conn> <data>", .{});
+        return;
+    };
+    const conn_id = parseConnId(conn_token) orelse {
+        log.kprintln("Usage: tcpsend <conn> <data>", .{});
+        return;
+    };
+    const data = stripDoubleQuotes(trimSpaces(rest));
+    if (data.len == 0) {
+        log.kprintln("Usage: tcpsend <conn> <data>", .{});
+        return;
+    }
+
+    const result = tcp.send(conn_id, data);
+    log.kprintln("tcpsend: {s} conn={d} bytes={d}", .{ @tagName(result), conn_id, data.len });
+}
+
+fn cmdTcprecv(args: []const u8) void {
+    const conn_id = parseConnId(trimSpaces(args)) orelse {
+        log.kprintln("Usage: tcprecv <conn>", .{});
+        return;
+    };
+
+    const result = tcp.recv(conn_id);
+    log.kprintln("tcprecv: conn={d} state={s} bytes={d}", .{ conn_id, @tagName(result.state), result.data.len });
+    if (result.data.len > 0) {
+        log.kprintln("{s}", .{result.data});
+    }
+}
+
+fn cmdTcpclose(args: []const u8) void {
+    const conn_id = parseConnId(trimSpaces(args)) orelse {
+        log.kprintln("Usage: tcpclose <conn>", .{});
+        return;
+    };
+
+    tcp.close(conn_id);
+    const conn = tcp.getConnection(conn_id);
+    log.kprintln("tcpclose: conn={d} state={s}", .{
+        conn_id,
+        if (conn) |entry| @tagName(entry.state) else "invalid",
+    });
+}
+
+fn cmdTcpstat(_: []const u8) void {
+    const stats = tcp.getStats();
+    log.kprintln("TCP stats: rx={d} tx={d} opened={d} closed={d} retrans={d} rst={d} bad_csum={d} malformed={d} send_errors={d} last_tx={s}", .{
+        stats.segments_received,
+        stats.segments_sent,
+        stats.connections_opened,
+        stats.connections_closed,
+        stats.retransmits,
+        stats.resets_sent,
+        stats.bad_checksum,
+        stats.malformed,
+        stats.send_errors,
+        @tagName(stats.last_send_status),
+    });
+    log.kprintln("  ID STATE        LOCAL  REMOTE              SND_NXT    RCV_NXT    RX TX", .{});
+    for (0..tcp.MAX_CONNECTIONS) |i| {
+        const conn_id: tcp.ConnId = @intCast(i);
+        const conn = tcp.getConnection(conn_id) orelse continue;
+        if (conn.state == .closed) continue;
+        log.kprintln("  {d}  {s: <12} {d: <6} {d}.{d}.{d}.{d}:{d: <6} {d: <10} {d: <10} {d: <2} {d}", .{
+            i,
+            @tagName(conn.state),
+            conn.local_port,
+            conn.remote_ip[0],
+            conn.remote_ip[1],
+            conn.remote_ip[2],
+            conn.remote_ip[3],
+            conn.remote_port,
+            conn.snd_nxt,
+            conn.rcv_nxt,
+            conn.rx_len,
+            conn.tx_len,
+        });
     }
 }
 
@@ -984,6 +1137,11 @@ fn parseU16(value: []const u8) ?u16 {
         if (result > 65535) return null;
     }
     return @intCast(result);
+}
+
+fn parseConnId(value: []const u8) ?tcp.ConnId {
+    const id = parseUsize(value, tcp.MAX_CONNECTIONS - 1) orelse return null;
+    return @intCast(id);
 }
 
 fn parseUsize(value: []const u8, max_value: usize) ?usize {
