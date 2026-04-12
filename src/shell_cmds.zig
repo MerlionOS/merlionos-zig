@@ -1,11 +1,15 @@
+const std = @import("std");
+
 const ai = @import("ai.zig");
 const arp = @import("arp.zig");
 const arp_cache = @import("arp_cache.zig");
+const dns = @import("dns.zig");
 const e1000 = @import("e1000.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
 const ipv4 = @import("ipv4.zig");
 const log = @import("log.zig");
+const net = @import("net.zig");
 const pci = @import("pci.zig");
 const pit = @import("pit.zig");
 const pmm = @import("pmm.zig");
@@ -32,9 +36,11 @@ const commands = [_]Command{
     .{ .name = "arppoll", .description = "Poll one ARP reply from RX", .handler = cmdArppoll },
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
     .{ .name = "cd", .description = "Change the current directory", .handler = cmdCd },
-    .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
+    .{ .name = "dns", .description = "Resolve a domain name to IPv4", .handler = cmdDns },
     .{ .name = "echo", .description = "Print text or write with > redirection", .handler = cmdEcho },
+    .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
+    .{ .name = "httpget", .description = "Simple HTTP GET request", .handler = cmdHttpget },
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
     .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
     .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
@@ -69,6 +75,11 @@ var current_dir_buf: [MAX_PATH]u8 = [_]u8{'/'} ++ [_]u8{0} ** (MAX_PATH - 1);
 var current_dir_len: usize = 1;
 
 const UDP_SHELL_SOURCE_PORT: u16 = 12345;
+const DNS_COMMAND_TIMEOUT_TICKS: u64 = 500;
+const HTTP_CONNECT_TIMEOUT_TICKS: u64 = 500;
+const HTTP_RESPONSE_TIMEOUT_TICKS: u64 = 1000;
+const HTTP_REQUEST_BUFFER_SIZE: usize = 512;
+const HTTP_RESPONSE_BUFFER_SIZE: usize = 4096;
 
 pub fn dispatch(cmd: []const u8, args: []const u8) void {
     for (commands) |command| {
@@ -487,6 +498,17 @@ fn cmdNetinfo(_: []const u8) void {
         tcp_stats.send_errors,
         @tagName(tcp_stats.last_send_status),
     });
+    const dns_stats = dns.getStats();
+    log.kprintln("DNS stats: queries={d} responses={d} hits={d} misses={d} timeouts={d} malformed={d} send_errors={d} last_tx={s}", .{
+        dns_stats.queries_sent,
+        dns_stats.responses_received,
+        dns_stats.cache_hits,
+        dns_stats.cache_misses,
+        dns_stats.timeouts,
+        dns_stats.malformed,
+        dns_stats.send_errors,
+        @tagName(dns_stats.last_send_status),
+    });
     const cache_stats = arp_cache.getStats();
     log.kprintln("ARP cache: lookups={d} misses={d} req_tx={d} req_rx={d} reply_tx={d} reply_rx={d} retries={d} expired={d}", .{
         cache_stats.lookups,
@@ -511,9 +533,7 @@ fn cmdNetpoll(args: []const u8) void {
         return;
     };
 
-    const processed = eth.pollAll(count);
-    arp_cache.tick();
-    tcp.tick();
+    const processed = serviceNetwork(count);
     const stats = eth.getStats();
     log.kprintln("netpoll: processed={d} requested={d} last={s}", .{
         processed,
@@ -557,6 +577,16 @@ fn cmdNetpoll(args: []const u8) void {
         tcp_stats.resets_sent,
         tcp_stats.bad_checksum,
         tcp_stats.send_errors,
+    });
+    const dns_stats = dns.getStats();
+    log.kprintln("DNS stats: queries={d} responses={d} hits={d} misses={d} timeouts={d} malformed={d} send_errors={d}", .{
+        dns_stats.queries_sent,
+        dns_stats.responses_received,
+        dns_stats.cache_hits,
+        dns_stats.cache_misses,
+        dns_stats.timeouts,
+        dns_stats.malformed,
+        dns_stats.send_errors,
     });
 }
 
@@ -687,6 +717,140 @@ fn cmdUdpsend(args: []const u8) void {
     });
     if (status == .arp_pending) {
         log.kprintln("Run netpoll and retry after ARP resolves.", .{});
+    }
+}
+
+fn cmdDns(args: []const u8) void {
+    const name = stripDoubleQuotes(trimSpaces(args));
+    if (name.len == 0) {
+        log.kprintln("Usage: dns <domain>", .{});
+        return;
+    }
+
+    var resolved_ip: net.Ipv4Addr = undefined;
+    const status = resolveDnsBlocking(name, &resolved_ip);
+    switch (status) {
+        .resolved => log.kprintln("dns: {s} -> {d}.{d}.{d}.{d}", .{
+            name,
+            resolved_ip[0],
+            resolved_ip[1],
+            resolved_ip[2],
+            resolved_ip[3],
+        }),
+        .pending => log.kprintln("dns: pending for {s}; run netpoll and retry", .{name}),
+        .not_found => log.kprintln("dns: {s} not found", .{name}),
+        .timeout => log.kprintln("dns: timeout resolving {s}", .{name}),
+        .server_error => log.kprintln("dns: server error resolving {s}", .{name}),
+        .name_too_long => log.kprintln("dns: name too long", .{}),
+        .invalid_name => log.kprintln("dns: invalid name", .{}),
+        .no_dns_server => log.kprintln("dns: no DNS server configured", .{}),
+        .send_error => log.kprintln("dns: send error", .{}),
+    }
+}
+
+fn cmdHttpget(args: []const u8) void {
+    var rest = trimSpaces(args);
+    const host = stripDoubleQuotes(takeToken(&rest) orelse {
+        log.kprintln("Usage: httpget <host-or-ip> <port> <path>", .{});
+        return;
+    });
+    const port_token = takeToken(&rest) orelse {
+        log.kprintln("Usage: httpget <host-or-ip> <port> <path>", .{});
+        return;
+    };
+    const path = stripDoubleQuotes(trimSpaces(rest));
+    if (path.len == 0 or path[0] != '/') {
+        log.kprintln("Usage: httpget <host-or-ip> <port> <path>", .{});
+        return;
+    }
+
+    const port = parseU16(port_token) orelse {
+        log.kprintln("Usage: httpget <host-or-ip> <port> <path>", .{});
+        return;
+    };
+
+    var target_ip: net.Ipv4Addr = undefined;
+    const resolve_status = resolveHostBlocking(host, &target_ip);
+    if (resolve_status != .resolved) {
+        log.kprintln("httpget: resolve {s} failed: {s}", .{ host, @tagName(resolve_status) });
+        return;
+    }
+
+    var conn_id: tcp.ConnId = 0;
+    const connect_status = tcp.connect(target_ip, port, &conn_id);
+    if (connect_status != .ok) {
+        log.kprintln("httpget: connect failed: {s}", .{@tagName(connect_status)});
+        return;
+    }
+
+    var state = tcp.State.syn_sent;
+    const connect_start = pit.getTicks();
+    while (pit.getTicks() -% connect_start < HTTP_CONNECT_TIMEOUT_TICKS) {
+        if (tcp.getConnection(conn_id)) |conn| {
+            state = conn.state;
+            if (state == .established or state == .closed) break;
+        } else {
+            state = .closed;
+            break;
+        }
+        _ = serviceNetwork(10);
+    }
+
+    if (state != .established) {
+        log.kprintln("httpget: connect timeout conn={d} state={s}", .{ conn_id, @tagName(state) });
+        tcp.close(conn_id);
+        return;
+    }
+
+    var request_buf: [HTTP_REQUEST_BUFFER_SIZE]u8 = undefined;
+    const request = std.fmt.bufPrint(
+        &request_buf,
+        "GET {s} HTTP/1.0\r\nHost: {s}\r\nConnection: close\r\n\r\n",
+        .{ path, host },
+    ) catch {
+        log.kprintln("httpget: request too large", .{});
+        tcp.close(conn_id);
+        return;
+    };
+
+    const send_status = tcp.send(conn_id, request);
+    if (send_status != .ok) {
+        log.kprintln("httpget: send failed: {s}", .{@tagName(send_status)});
+        tcp.close(conn_id);
+        return;
+    }
+
+    var response_buf: [HTTP_RESPONSE_BUFFER_SIZE]u8 = undefined;
+    var response_len: usize = 0;
+    var response_truncated = false;
+    const response_start = pit.getTicks();
+    while (pit.getTicks() -% response_start < HTTP_RESPONSE_TIMEOUT_TICKS) {
+        _ = serviceNetwork(20);
+        response_truncated = drainTcpRecv(conn_id, &response_buf, &response_len) or response_truncated;
+
+        if (tcp.getConnection(conn_id)) |conn| {
+            state = conn.state;
+            if (state == .closed or state == .time_wait) break;
+        } else {
+            state = .closed;
+            break;
+        }
+    }
+
+    if (response_len == 0) {
+        log.kprintln("httpget: no response conn={d} state={s}", .{ conn_id, @tagName(state) });
+    } else {
+        log.kprintln("httpget: conn={d} state={s} bytes={d}{s}", .{
+            conn_id,
+            @tagName(state),
+            response_len,
+            if (response_truncated) " truncated" else "",
+        });
+        log.kprintln("{s}", .{response_buf[0..response_len]});
+    }
+
+    if (state == .established or state == .close_wait) {
+        tcp.close(conn_id);
     }
 }
 
@@ -1028,6 +1192,50 @@ fn printPciDevice(device: *const pci.Device) void {
         device.prog_if,
         pci.className(device),
     });
+}
+
+fn serviceNetwork(max_frames: usize) usize {
+    const processed = eth.pollAll(max_frames);
+    arp_cache.tick();
+    tcp.tick();
+    dns.tick();
+    return processed;
+}
+
+fn resolveHostBlocking(host: []const u8, ip_out: *net.Ipv4Addr) dns.ResolveStatus {
+    if (parseIpv4(host)) |ip| {
+        ip_out.* = ip;
+        return .resolved;
+    }
+    return resolveDnsBlocking(host, ip_out);
+}
+
+fn resolveDnsBlocking(name: []const u8, ip_out: *net.Ipv4Addr) dns.ResolveStatus {
+    var status = dns.resolve(name, ip_out);
+    const start_tick = pit.getTicks();
+    while (status == .pending and pit.getTicks() -% start_tick < DNS_COMMAND_TIMEOUT_TICKS) {
+        _ = serviceNetwork(10);
+        status = dns.resolve(name, ip_out);
+    }
+
+    if (status == .pending) {
+        dns.tick();
+        status = dns.resolve(name, ip_out);
+    }
+    return status;
+}
+
+fn drainTcpRecv(conn_id: tcp.ConnId, buffer: *[HTTP_RESPONSE_BUFFER_SIZE]u8, len: *usize) bool {
+    const result = tcp.recv(conn_id);
+    if (result.data.len == 0) return false;
+
+    const available = buffer.len - len.*;
+    const copy_len = if (result.data.len < available) result.data.len else available;
+    if (copy_len > 0) {
+        @memcpy(buffer[len.* .. len.* + copy_len], result.data[0..copy_len]);
+        len.* += copy_len;
+    }
+    return copy_len < result.data.len;
 }
 
 fn strEql(a: []const u8, b: []const u8) bool {

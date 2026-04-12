@@ -21,6 +21,7 @@ const ipv4 = @import("ipv4.zig");
 const icmp = @import("icmp.zig");
 const udp = @import("udp.zig");
 const tcp = @import("tcp.zig");
+const dns = @import("dns.zig");
 const ai = @import("ai.zig");
 const task = @import("task.zig");
 const scheduler = @import("scheduler.zig");
@@ -143,6 +144,7 @@ export fn _start() callconv(.c) noreturn {
     icmp.init();
     udp.init();
     tcp.init();
+    dns.init();
     const net_cfg = net.getConfig();
     var ip_buf: [16]u8 = undefined;
     if (net_cfg.mac_valid) {

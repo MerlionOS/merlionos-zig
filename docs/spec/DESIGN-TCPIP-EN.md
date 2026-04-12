@@ -1681,6 +1681,6 @@ Implement in this order; each file can be compiled and tested as soon as it is c
 - [x] Modify `src/icmp.zig` — Switch to ipv4.zig; verify ping still works
 - [x] `src/udp.zig` — Test with `udpsend`
 - [x] `src/tcp.zig` — Test the three-way handshake, send, receive, and close with `tcpconnect` + `netpoll`
-- [ ] `src/dns.zig` — Test with `dns example.com` + `netpoll`
-- [ ] Shell command integration — Add and verify commands one by one (`netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat` done)
-- [ ] `src/main.zig` — Add initialization calls (net/eth/arp_cache/ipv4/icmp/udp/tcp wired)
+- [x] `src/dns.zig` — Test with `dns example.com` + `netpoll`, and verify a cache hit on the second query
+- [ ] Shell command integration — Add and verify commands one by one (`netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget` done)
+- [x] `src/main.zig` — Add initialization calls (net/eth/arp_cache/ipv4/icmp/udp/tcp/dns wired)
