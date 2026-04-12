@@ -4,6 +4,7 @@ const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const pic = @import("pic.zig");
 const pit = @import("pit.zig");
+const process = @import("process.zig");
 const scheduler = @import("scheduler.zig");
 
 pub const IdtEntry = packed struct {
@@ -84,18 +85,30 @@ export fn invalidOpcodeInner() void {
     cpu.halt();
 }
 
-export fn doubleFaultInner() void {
+export fn doubleFaultInner(error_code: u64, rip: u64, cs: u64) void {
+    _ = error_code;
+    _ = rip;
+    _ = cs;
     log.kprintln("[cpu] Double fault", .{});
     cpu.halt();
 }
 
-export fn generalProtectionInner() void {
-    log.kprintln("[cpu] General protection fault", .{});
+export fn generalProtectionInner(error_code: u64, rip: u64, cs: u64) void {
+    if (isUserFault(cs)) {
+        process.faultCurrent("general protection fault", -13, error_code, rip, 0, false);
+    }
+
+    log.kprintln("[cpu] General protection fault rip=0x{x} cs=0x{x} err=0x{x}", .{ rip, cs, error_code });
     cpu.halt();
 }
 
-export fn pageFaultInner() void {
-    log.kprintln("[cpu] Page fault at 0x{x}", .{cpu.readCr2()});
+export fn pageFaultInner(error_code: u64, rip: u64, cs: u64) void {
+    const fault_addr = cpu.readCr2();
+    if (isUserFault(cs)) {
+        process.faultCurrent("page fault", -14, error_code, rip, fault_addr, true);
+    }
+
+    log.kprintln("[cpu] Page fault at 0x{x} rip=0x{x} cs=0x{x} err=0x{x}", .{ fault_addr, rip, cs, error_code });
     cpu.halt();
 }
 
@@ -112,6 +125,10 @@ export fn irq1Inner() void {
 
 export fn yieldInner(current_rsp: u64) callconv(.c) u64 {
     return scheduler.yieldFromContext(current_rsp);
+}
+
+fn isUserFault(cs: u64) bool {
+    return (cs & 0x3) == 0x3;
 }
 
 fn defaultInterruptStub() callconv(.naked) void {
@@ -214,6 +231,9 @@ fn pushRegsAndCall(comptime target: []const u8, comptime has_error_code: bool) [
         \\pushq %%r9
         \\pushq %%r10
         \\pushq %%r11
+        \\movq 72(%%rsp), %%rdi
+        \\movq 80(%%rsp), %%rsi
+        \\movq 88(%%rsp), %%rdx
         \\call 
     ++ target ++
         \\

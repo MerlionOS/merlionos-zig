@@ -1173,8 +1173,26 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "bad_cli")) {
+        const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn bad_cli", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned bad_cli pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
+    if (strEql(name, "bad_read")) {
+        const pid = process.spawnFlat("bad_read", user_programs.bad_read[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn bad_read", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned bad_read pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
 
-    log.kprintln("Usage: runuser [hello|loop]", .{});
+    log.kprintln("Usage: runuser [hello|loop|bad_cli|bad_read]", .{});
 }
 
 fn cmdTouch(args: []const u8) void {

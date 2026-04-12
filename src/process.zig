@@ -119,6 +119,33 @@ pub fn exitCurrent(exit_code: i32) noreturn {
     }
 }
 
+pub fn faultCurrent(kind: []const u8, exit_code: i32, error_code: u64, rip: u64, fault_addr: u64, has_fault_addr: bool) noreturn {
+    if (task.currentTask()) |current| {
+        if (current.is_user and getProcessInfoMutable(current.pid) != null) {
+            if (has_fault_addr) {
+                log.kprintln("[proc] killing user process {d}: {s} rip=0x{x} err=0x{x} addr=0x{x}", .{
+                    current.pid,
+                    kind,
+                    rip,
+                    error_code,
+                    fault_addr,
+                });
+            } else {
+                log.kprintln("[proc] killing user process {d}: {s} rip=0x{x} err=0x{x}", .{
+                    current.pid,
+                    kind,
+                    rip,
+                    error_code,
+                });
+            }
+            exitCurrent(exit_code);
+        }
+    }
+
+    log.kprintln("[proc] unhandled process fault: {s} rip=0x{x} err=0x{x}", .{ kind, rip, error_code });
+    cpu.halt();
+}
+
 pub fn killUser(pid: u32) KillUserResult {
     const info = getProcessInfoMutable(pid) orelse {
         return if (task.pidExists(pid)) .not_user else .not_found;
@@ -131,7 +158,13 @@ pub fn killUser(pid: u32) KillUserResult {
         releaseAddressSpace(slot);
     }
 
-    return switch (task.kill(pid)) {
+    const result = task.kill(pid);
+    switch (result) {
+        .killed, .not_found => info.* = emptyProcessInfo(),
+        .busy_current => {},
+    }
+
+    return switch (result) {
         .killed => .killed,
         .not_found => .not_found,
         .busy_current => .busy_current,
@@ -184,7 +217,7 @@ fn getProcessInfoMutable(pid: u32) ?*ProcessInfo {
 
 fn findFreeSlot() ?usize {
     for (process_table, 0..) |info, i| {
-        if (!info.active and !address_space_used[i]) return i;
+        if (info.proc_type == .kernel and !address_space_used[i]) return i;
     }
     return null;
 }

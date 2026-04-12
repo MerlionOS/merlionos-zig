@@ -1255,8 +1255,8 @@ Killed process 3
 ```
 - [x] hello_user: prints and exits normally
 - [x] loop_user: prints in a loop + yield, verify scheduler works
-- [ ] bad_cli: verify #GP is caught, process is killed without kernel crash
-- [ ] bad_read: verify #PF is caught, process is killed
+- [x] bad_cli: verify #GP is caught, process is killed without kernel crash
+- [x] bad_read: verify #PF is caught, process is killed without kernel crash
 - [ ] Run multiple user processes + shell simultaneously, verify preemptive scheduling
 - [x] ps command shows correct process types and states
 - [x] syscallstat shows correct call counts
@@ -1297,7 +1297,7 @@ Phase 8f: Shell Integration
 - [x] shell_cmds.zig: runuser / ps user-mode display
 - [x] shell_cmds.zig: killuser
 - [x] user_programs.zig: loop_user
-- [ ] user_programs.zig: bad_cli / bad_read
+- [x] user_programs.zig: bad_cli / bad_read
 - [ ] Verify: all test cases
 - [x] main.zig: add process.init()
 ```

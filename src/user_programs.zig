@@ -37,3 +37,14 @@ pub const loop_user = [_]u8{
     'c',  'k',
     '\n',
 };
+
+pub const bad_cli = [_]u8{
+    0xfa, // cli, privileged in Ring 3
+    0xeb, 0xfe, // jmp $
+};
+
+pub const bad_read = [_]u8{
+    0x48, 0xb8, 0x00, 0x00, 0x00, 0x80, 0xff, 0xff, 0xff, 0xff, // mov rax, 0xffffffff80000000
+    0x8a, 0x00, // mov al, [rax]
+    0xeb, 0xfe, // jmp $
+};

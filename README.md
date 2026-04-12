@@ -136,7 +136,8 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [ ] ELF loader in `elf.zig`
 - [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
 - [x] Shell integration: `killuser`
-- [ ] Protection tests: `bad_cli`, `bad_read`, and multi-user-process preemption
+- [x] Protection tests: `bad_cli` and `bad_read`
+- [ ] Multi-user-process preemption
 
 ## Zig vs Rust: Why Rewrite?
 
