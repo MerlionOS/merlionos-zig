@@ -55,15 +55,15 @@ export fn _start() callconv(.c) noreturn {
 
     // Phase 4: Print banner to both serial + VGA
     log.kprintln("", .{});
-    log.kprintln("  __  __           _ _              ___  ____        ______       ", .{});
-    log.kprintln(" |  \\/  | ___ _ __| (_) ___  _ __  / _ \\/ ___|      |__  (_) __ _ ", .{});
-    log.kprintln(" | |\\/| |/ _ \\ '__| | |/ _ \\| '_ \\| | | \\___ \\ _____ / /| |/ _` |", .{});
-    log.kprintln(" | |  | |  __/ |  | | | (_) | | | | |_| |___) |_____/ /_| | (_| |", .{});
-    log.kprintln(" |_|  |_|\\___|_|  |_|_|\\___/|_| |_|\\___/|____/     /____|_|\\__, |", .{});
-    log.kprintln("                                                            |___/ ", .{});
-    log.kprintln("", .{});
-    log.kprintln("  MerlionOS-Zig v{s}", .{VERSION});
-    log.kprintln("  Built with Zig 0.15 | x86_64 | Limine boot", .{});
+    log.kprintln("        |\\|__/|", .{});
+    log.kprintln("       / o  o  \\     MerlionOS-Zig v{s}", .{VERSION});
+    log.kprintln("      (    W     )    Built with Zig 0.15", .{});
+    log.kprintln("       \\  ---  /     x86_64 | Limine boot", .{});
+    log.kprintln("        |  |  |      ", .{});
+    log.kprintln("        /      \\     Built for AI.", .{});
+    log.kprintln("       |        |    Built by AI.", .{});
+    log.kprintln("      /    /\\    \\   ", .{});
+    log.kprintln("     |_|__|  |_|__|  ", .{});
     log.kprintln("", .{});
 
     // Phase 5: Print memory map
