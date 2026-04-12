@@ -24,6 +24,13 @@ pub const ProcessInfo = struct {
     active: bool,
 };
 
+pub const KillUserResult = enum {
+    killed,
+    not_found,
+    not_user,
+    busy_current,
+};
+
 var process_table: [MAX_PROCESSES]ProcessInfo = [_]ProcessInfo{emptyProcessInfo()} ** MAX_PROCESSES;
 var address_spaces: [MAX_PROCESSES]user_mem.AddressSpace = undefined;
 var address_space_used: [MAX_PROCESSES]bool = [_]bool{false} ** MAX_PROCESSES;
@@ -40,9 +47,15 @@ pub fn init() void {
 }
 
 pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64) ?u32 {
-    const proc_slot = findFreeSlot() orelse return null;
+    const proc_slot = findFreeSlot() orelse {
+        log.kprintln("[proc] spawnFlat: no process slot", .{});
+        return null;
+    };
     const addr_space = &address_spaces[proc_slot];
-    if (!user_mem.createInto(addr_space)) return null;
+    if (!user_mem.createInto(addr_space)) {
+        log.kprintln("[proc] spawnFlat: address space create failed", .{});
+        return null;
+    }
     address_space_used[proc_slot] = true;
 
     const pages_needed = (code.len + @as(usize, @intCast(PAGE_SIZE - 1))) / @as(usize, @intCast(PAGE_SIZE));
@@ -50,6 +63,7 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
     while (page_index < pages_needed) : (page_index += 1) {
         const virt = code_vaddr + @as(u64, @intCast(page_index)) * PAGE_SIZE;
         if (!user_mem.mapUserPage(addr_space, virt, true)) {
+            log.kprintln("[proc] spawnFlat: code page map failed virt=0x{x}", .{virt});
             releaseAddressSpace(proc_slot);
             return null;
         }
@@ -60,21 +74,20 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
     copyToActiveAddressSpace(code_vaddr, code);
     cpu.writeCr3(saved_cr3);
 
-    const pid = task.spawnUser(name, entry, user_mem.USER_STACK_TOP - 8) orelse {
+    const spawned = task.spawnUserWithIndex(name, entry, user_mem.USER_STACK_TOP - 8) orelse {
+        log.kprintln("[proc] spawnFlat: task spawn failed", .{});
         releaseAddressSpace(proc_slot);
         return null;
     };
-    const task_index = task.indexOfPid(pid) orelse {
-        releaseAddressSpace(proc_slot);
-        return null;
-    };
-    const user_task = task.getTask(task_index) orelse {
+    const user_task = task.getTask(spawned.index) orelse {
+        log.kprintln("[proc] spawnFlat: task index {d} missing after spawn", .{spawned.index});
+        _ = task.kill(spawned.pid);
         releaseAddressSpace(proc_slot);
         return null;
     };
 
     process_table[proc_slot] = .{
-        .pid = pid,
+        .pid = spawned.pid,
         .proc_type = .user,
         .address_space_slot = proc_slot,
         .kernel_stack_top = user_task.stack_top,
@@ -83,7 +96,7 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
         .active = true,
     };
 
-    return pid;
+    return spawned.pid;
 }
 
 pub fn exitCurrent(exit_code: i32) noreturn {
@@ -104,6 +117,25 @@ pub fn exitCurrent(exit_code: i32) noreturn {
     while (true) {
         asm volatile ("hlt");
     }
+}
+
+pub fn killUser(pid: u32) KillUserResult {
+    const info = getProcessInfoMutable(pid) orelse {
+        return if (task.pidExists(pid)) .not_user else .not_found;
+    };
+    if (task.currentPid() == pid) return .busy_current;
+
+    info.active = false;
+    if (info.address_space_slot) |slot| {
+        info.address_space_slot = null;
+        releaseAddressSpace(slot);
+    }
+
+    return switch (task.kill(pid)) {
+        .killed => .killed,
+        .not_found => .not_found,
+        .busy_current => .busy_current,
+    };
 }
 
 pub fn getProcessInfo(pid: u32) ?*const ProcessInfo {

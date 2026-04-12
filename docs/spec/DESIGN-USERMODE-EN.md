@@ -1294,7 +1294,7 @@ Phase 8e: Process Lifecycle
 
 Phase 8f: Shell Integration
 - [x] shell_cmds.zig: runuser / ps user-mode display
-- [ ] shell_cmds.zig: killuser
+- [x] shell_cmds.zig: killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] Verify: all test cases
 - [x] main.zig: add process.init()

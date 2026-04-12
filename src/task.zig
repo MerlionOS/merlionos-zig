@@ -36,6 +36,11 @@ pub const KillResult = enum {
     busy_current,
 };
 
+pub const SpawnResult = struct {
+    pid: u32,
+    index: usize,
+};
+
 pub const TaskEntryFn = *const fn () callconv(.c) noreturn;
 
 pub extern fn yieldCurrent() void;
@@ -95,6 +100,11 @@ pub fn spawn(name: []const u8, entry_fn: TaskEntryFn) ?u32 {
 }
 
 pub fn spawnUser(name: []const u8, entry_point: u64, user_stack_top: u64) ?u32 {
+    const result = spawnUserWithIndex(name, entry_point, user_stack_top) orelse return null;
+    return result.pid;
+}
+
+pub fn spawnUserWithIndex(name: []const u8, entry_point: u64, user_stack_top: u64) ?SpawnResult {
     const index = allocSlot() orelse return null;
     const stack_slot = allocStack() orelse return null;
 
@@ -114,21 +124,24 @@ pub fn spawnUser(name: []const u8, entry_point: u64, user_stack_top: u64) ?u32 {
 
     tasks[index] = new_task;
     next_pid += 1;
-    return new_task.pid;
+    return .{ .pid = new_task.pid, .index = index };
 }
 
 pub fn kill(pid: u32) KillResult {
-    const index = findIndexByPid(pid) orelse return .not_found;
-    if (current_task_index != null and current_task_index.? == index) return .busy_current;
+    for (0..MAX_TASKS) |index| {
+        if (tasks[index]) |task_entry| {
+            if (task_entry.pid != pid) continue;
+            if (current_task_index != null and current_task_index.? == index) return .busy_current;
 
-    if (tasks[index]) |task_entry| {
-        if (task_entry.stack_slot) |stack_slot| {
-            stack_used[stack_slot] = false;
+            if (task_entry.stack_slot) |stack_slot| {
+                stack_used[stack_slot] = false;
+            }
+            tasks[index] = null;
+            return .killed;
         }
     }
 
-    tasks[index] = null;
-    return .killed;
+    return .not_found;
 }
 
 pub fn currentTask() ?*Task {
@@ -153,6 +166,15 @@ pub fn getCurrentIndex() ?usize {
 
 pub fn indexOfPid(pid: u32) ?usize {
     return findIndexByPid(pid);
+}
+
+pub fn pidExists(pid: u32) bool {
+    for (tasks) |entry| {
+        if (entry) |task_entry| {
+            if (task_entry.pid == pid) return true;
+        }
+    }
+    return false;
 }
 
 pub fn setCurrentIndex(index: usize) void {

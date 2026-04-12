@@ -46,6 +46,7 @@ const commands = [_]Command{
     .{ .name = "ifconfig", .description = "Show/set network interface config", .handler = cmdIfconfig },
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
     .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
+    .{ .name = "killuser", .description = "Kill or reap a user process by pid", .handler = cmdKilluser },
     .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
     .{ .name = "lspci", .description = "List discovered PCI devices", .handler = cmdLspci },
     .{ .name = "mem", .description = "Memory statistics", .handler = cmdMem },
@@ -338,10 +339,30 @@ fn cmdKill(args: []const u8) void {
         return;
     };
 
+    if (task.pidExists(pid) and process.getProcessInfo(pid) != null) {
+        log.kprintln("Task {d} is a user process; use killuser {d}.", .{ pid, pid });
+        return;
+    }
+
     switch (task.kill(pid)) {
         .killed => log.kprintln("Killed task {d}.", .{pid}),
         .not_found => log.kprintln("Task {d} not found.", .{pid}),
         .busy_current => log.kprintln("Cannot kill the currently running task {d}.", .{pid}),
+    }
+}
+
+fn cmdKilluser(args: []const u8) void {
+    const trimmed = trimSpaces(args);
+    const pid = parsePid(trimmed) orelse {
+        log.kprintln("Usage: killuser <pid>", .{});
+        return;
+    };
+
+    switch (process.killUser(pid)) {
+        .killed => log.kprintln("Killed user process {d}.", .{pid}),
+        .not_found => log.kprintln("User process {d} not found.", .{pid}),
+        .not_user => log.kprintln("PID {d} is not a user process.", .{pid}),
+        .busy_current => log.kprintln("Cannot kill the currently running user process {d}.", .{pid}),
     }
 }
 

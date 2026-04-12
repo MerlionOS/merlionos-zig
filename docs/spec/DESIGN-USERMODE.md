@@ -1295,7 +1295,7 @@ Phase 8e: 进程生命周期
 
 Phase 8f: Shell 集成
 - [x] shell_cmds.zig: runuser / ps 用户态显示
-- [ ] shell_cmds.zig: killuser
+- [x] shell_cmds.zig: killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] 验证: 所有测试用例
 - [x] main.zig: 添加 process.init()
