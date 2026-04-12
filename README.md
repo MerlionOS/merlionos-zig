@@ -133,7 +133,8 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Process lifecycle syscall: `SYS_YIELD`
 - [x] Built-in `loop_user` flat program runs through Ring 3, `SYS_WRITE`, and `SYS_YIELD`
 - [x] Scheduling smoke test: `runuser loop`, shell preemption, and live `killuser`
-- [ ] ELF loader in `elf.zig`
+- [x] ELF parser/load helper in `elf.zig` with `elftest` segment/load smoke check
+- [ ] ELF-backed user process execution from VFS
 - [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
 - [x] Shell integration: `killuser`
 - [x] Protection tests: `bad_cli` and `bad_read`

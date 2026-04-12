@@ -1284,8 +1284,9 @@ Phase 8c: User Processes
 - [x] Verify: runuser hello prints "Hello from Ring 3!"
 
 Phase 8d: ELF Loader
-- [ ] src/elf.zig — parse / load
-- [ ] Verify: parse an ELF, print segment information
+- [x] src/elf.zig — parse / load helper
+- [x] Verify: `elftest` parses an embedded ELF fixture, prints segment information, and loads it into a temporary user address space
+- [ ] Verify: load an ELF from VFS and execute it as a user process
 
 Phase 8e: Process Lifecycle
 - [x] syscall.zig additions: SYS_YIELD

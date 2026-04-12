@@ -1285,8 +1285,9 @@ Phase 8c: 用户进程
 - [x] 验证: runuser hello 打印 "Hello from Ring 3!"
 
 Phase 8d: ELF 加载器
-- [ ] src/elf.zig — parse / load
-- [ ] 验证: 解析一个 ELF，打印段信息
+- [x] src/elf.zig — parse / load helper
+- [x] 验证: `elftest` 解析内嵌 ELF fixture，打印段信息，并加载到临时用户地址空间
+- [ ] 验证: 从 VFS 加载 ELF 并作为用户进程执行
 
 Phase 8e: 进程生命周期
 - [x] syscall.zig 补充: SYS_YIELD

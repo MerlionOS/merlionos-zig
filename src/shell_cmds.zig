@@ -4,6 +4,7 @@ const ai = @import("ai.zig");
 const arp = @import("arp.zig");
 const arp_cache = @import("arp_cache.zig");
 const e1000 = @import("e1000.zig");
+const elf = @import("elf.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
 const ipv4 = @import("ipv4.zig");
@@ -41,6 +42,7 @@ const commands = [_]Command{
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
     .{ .name = "dns", .description = "Resolve a domain name to IPv4", .handler = cmdDns },
     .{ .name = "echo", .description = "Print text or write with > redirection", .handler = cmdEcho },
+    .{ .name = "elftest", .description = "Parse a built-in ELF fixture", .handler = cmdElftest },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
     .{ .name = "httpget", .description = "Simple HTTP GET request", .handler = cmdHttpget },
     .{ .name = "ifconfig", .description = "Show/set network interface config", .handler = cmdIfconfig },
@@ -1232,6 +1234,36 @@ fn cmdUsermemtest(_: []const u8) void {
     if (result == .ok) {
         log.kprintln("  created address space, mapped text+stack pages, switched CR3, restored kernel CR3", .{});
     }
+}
+
+fn cmdElftest(_: []const u8) void {
+    var result: elf.ParseResult = undefined;
+    const status = elf.parse(elf.sample_exec[0..], &result);
+    log.kprintln("elftest: {s}", .{@tagName(status)});
+    if (status != .ok) return;
+
+    log.kprintln("  entry=0x{x} segments={d}", .{ result.entry_point, result.segment_count });
+    var index: usize = 0;
+    while (index < result.segment_count) : (index += 1) {
+        const segment = result.segments[index];
+        log.kprintln("  LOAD {d}: vaddr=0x{x} off=0x{x} filesz={d} memsz={d} writable={s} executable={s}", .{
+            index,
+            segment.vaddr,
+            segment.file_offset,
+            segment.file_size,
+            segment.mem_size,
+            if (segment.writable) "yes" else "no",
+            if (segment.executable) "yes" else "no",
+        });
+    }
+
+    var address_space = user_mem.create() orelse {
+        log.kprintln("  load=create_failed", .{});
+        return;
+    };
+    defer user_mem.destroy(&address_space);
+
+    log.kprintln("  load={s}", .{if (elf.load(elf.sample_exec[0..], &result, &address_space)) "ok" else "failed"});
 }
 
 fn cmdTree(args: []const u8) void {
