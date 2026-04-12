@@ -41,6 +41,7 @@ const commands = [_]Command{
     .{ .name = "echo", .description = "Print text or write with > redirection", .handler = cmdEcho },
     .{ .name = "help", .description = "Show available commands", .handler = cmdHelp },
     .{ .name = "httpget", .description = "Simple HTTP GET request", .handler = cmdHttpget },
+    .{ .name = "ifconfig", .description = "Show/set network interface config", .handler = cmdIfconfig },
     .{ .name = "info", .description = "System information", .handler = cmdInfo },
     .{ .name = "kill", .description = "Kill a background task by pid", .handler = cmdKill },
     .{ .name = "ls", .description = "List a directory in the virtual filesystem", .handler = cmdLs },
@@ -854,6 +855,50 @@ fn cmdHttpget(args: []const u8) void {
     }
 }
 
+fn cmdIfconfig(args: []const u8) void {
+    var rest = trimSpaces(args);
+    const field = takeToken(&rest) orelse {
+        printIfconfig();
+        return;
+    };
+    const value = takeToken(&rest) orelse {
+        log.kprintln("Usage: ifconfig [ip|gw|dns <a.b.c.d>]", .{});
+        return;
+    };
+    if (trimSpaces(rest).len != 0) {
+        log.kprintln("Usage: ifconfig [ip|gw|dns <a.b.c.d>]", .{});
+        return;
+    }
+
+    const parsed_ip = parseIpv4(value) orelse {
+        log.kprintln("ifconfig: invalid IPv4 address", .{});
+        return;
+    };
+
+    if (strEql(field, "ip")) {
+        net.setLocalIp(parsed_ip);
+        arp_cache.flush();
+        log.kprintln("ifconfig: ip set to {d}.{d}.{d}.{d}", .{ parsed_ip[0], parsed_ip[1], parsed_ip[2], parsed_ip[3] });
+        return;
+    }
+
+    if (strEql(field, "gw")) {
+        net.setGatewayIp(parsed_ip);
+        arp_cache.flush();
+        log.kprintln("ifconfig: gateway set to {d}.{d}.{d}.{d}", .{ parsed_ip[0], parsed_ip[1], parsed_ip[2], parsed_ip[3] });
+        return;
+    }
+
+    if (strEql(field, "dns")) {
+        net.setDnsServer(parsed_ip);
+        dns.flushCache();
+        log.kprintln("ifconfig: dns set to {d}.{d}.{d}.{d}", .{ parsed_ip[0], parsed_ip[1], parsed_ip[2], parsed_ip[3] });
+        return;
+    }
+
+    log.kprintln("Usage: ifconfig [ip|gw|dns <a.b.c.d>]", .{});
+}
+
 fn cmdTcpconnect(args: []const u8) void {
     var rest = trimSpaces(args);
     const ip_token = takeToken(&rest) orelse {
@@ -1236,6 +1281,59 @@ fn drainTcpRecv(conn_id: tcp.ConnId, buffer: *[HTTP_RESPONSE_BUFFER_SIZE]u8, len
         len.* += copy_len;
     }
     return copy_len < result.data.len;
+}
+
+fn printIfconfig() void {
+    const cfg = net.getConfig();
+    var mac_buf: [18]u8 = undefined;
+    var local_buf: [16]u8 = undefined;
+    var gw_buf: [16]u8 = undefined;
+    var dns_buf: [16]u8 = undefined;
+    var mask_buf: [16]u8 = undefined;
+
+    log.kprintln("eth0: MAC {s}", .{
+        if (cfg.mac_valid) net.formatMac(cfg.local_mac, &mac_buf) else "<none>",
+    });
+    log.kprintln("      IP   {s}", .{net.formatIp(cfg.local_ip, &local_buf)});
+    log.kprintln("      GW   {s}", .{net.formatIp(cfg.gateway_ip, &gw_buf)});
+    log.kprintln("      DNS  {s}", .{net.formatIp(cfg.dns_server, &dns_buf)});
+    log.kprintln("      Mask {s}", .{net.formatIp(cfg.subnet_mask, &mask_buf)});
+
+    const eth_stats = eth.getStats();
+    const ipv4_stats = ipv4.getStats();
+    const udp_stats = udp.getStats();
+    const tcp_stats = tcp.getStats();
+    const dns_stats = dns.getStats();
+    log.kprintln("ETH stats: rx={d} tx={d} errors={d} last={s}", .{
+        eth_stats.frames_received,
+        eth_stats.frames_sent,
+        eth_stats.errors,
+        @tagName(eth_stats.last_poll_result),
+    });
+    log.kprintln("IPv4 stats: rx={d} tx={d} bad_csum={d} no_handler={d}", .{
+        ipv4_stats.packets_received,
+        ipv4_stats.packets_sent,
+        ipv4_stats.bad_checksum,
+        ipv4_stats.no_handler,
+    });
+    log.kprintln("UDP stats: rx={d} tx={d} bad_csum={d} send_errors={d}", .{
+        udp_stats.datagrams_received,
+        udp_stats.datagrams_sent,
+        udp_stats.bad_checksum,
+        udp_stats.send_errors,
+    });
+    log.kprintln("TCP stats: rx={d} tx={d} retrans={d} send_errors={d}", .{
+        tcp_stats.segments_received,
+        tcp_stats.segments_sent,
+        tcp_stats.retransmits,
+        tcp_stats.send_errors,
+    });
+    log.kprintln("DNS stats: queries={d} responses={d} hits={d} misses={d}", .{
+        dns_stats.queries_sent,
+        dns_stats.responses_received,
+        dns_stats.cache_hits,
+        dns_stats.cache_misses,
+    });
 }
 
 fn strEql(a: []const u8, b: []const u8) bool {

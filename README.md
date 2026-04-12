@@ -116,11 +116,10 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] ARP cache table with pending/resolved entries and legacy `arpreq` compatibility
 - [x] IPv4 send/receive/routing layer and ICMP migration onto IPv4
 - [x] UDP datagram send/receive path
-- [x] Shell commands: `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`
+- [x] Shell commands: `ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`
 - [x] TCP connection state machine with connect/send/recv/close
 - [x] DNS A-record client over UDP
 - [ ] Socket-like API for future shell/userland integration
-- [ ] Shell commands: `ifconfig`
 
 ## Zig vs Rust: Why Rewrite?
 

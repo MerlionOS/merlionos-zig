@@ -1682,5 +1682,5 @@ MerlionOS> dns example.com    # 第二次应该从缓存返回
 - [x] `src/udp.zig` — 用 `udpsend` 测试
 - [x] `src/tcp.zig` — 用 `tcpconnect` + `netpoll` 测试三次握手、发送、接收和关闭
 - [x] `src/dns.zig` — 用 `dns example.com` + `netpoll` 测试，第二次查询验证缓存命中
-- [ ] Shell 命令集成 — 逐个添加验证（已完成 `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`）
+- [x] Shell 命令集成 — 逐个添加验证（已完成 `ifconfig`, `netpoll`, `arp`, `udpsend`, `tcpconnect`, `tcpsend`, `tcprecv`, `tcpclose`, `tcpstat`, `dns`, `httpget`）
 - [x] `src/main.zig` — 添加初始化调用（已接入 net/eth/arp_cache/ipv4/icmp/udp/tcp/dns）
