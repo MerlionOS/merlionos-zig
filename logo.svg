@@ -1,19 +1,38 @@
-<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Outer Ring (Subtle) -->
-  <circle cx="100" cy="100" r="95" fill="none" stroke="#F7A41D" stroke-width="2" opacity="0.3" />
-  
-  <!-- Stylized Merlion 'S' Curve (Lion head to Fish tail) -->
-  <path d="M80 50 
-           C 110 30, 150 40, 150 75 
-           C 150 100, 130 115, 115 125 
-           C 100 135, 90 150, 100 170 
-           C 110 190, 140 185, 150 170" 
-        fill="none" stroke="#F7A41D" stroke-width="15" stroke-linecap="round" />
-        
-  <!-- The Zig 'Z' Bolt (Integrated into the core) -->
-  <path d="M85 85 L125 85 L85 125 L125 125" 
-        fill="none" stroke="#F7A41D" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">MerlionOS-Zig logo</title>
+  <desc id="desc">A dark rounded badge with a geometric merlion crest, wave tail, and Zig-inspired lightning mark.</desc>
 
-  <!-- Lion Eye (Minimalist dot) -->
-  <circle cx="125" cy="55" r="5" fill="#F7A41D" />
+  <defs>
+    <linearGradient id="badge" x1="34" y1="22" x2="166" y2="178" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#102744" />
+      <stop offset="1" stop-color="#06121F" />
+    </linearGradient>
+    <linearGradient id="gold" x1="65" y1="41" x2="147" y2="158" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFD36A" />
+      <stop offset="1" stop-color="#F7A41D" />
+    </linearGradient>
+    <linearGradient id="sea" x1="48" y1="132" x2="154" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#58E6D9" />
+      <stop offset="1" stop-color="#1498B7" />
+    </linearGradient>
+    <filter id="soft-shadow" x="18" y="18" width="164" height="168" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000814" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <path d="M100 18 164 44v71c0 35-25 55-64 71-39-16-64-36-64-71V44l64-26Z" fill="url(#badge)" filter="url(#soft-shadow)" />
+  <path d="M100 28 154 50v62c0 28-19 45-54 60-35-15-54-32-54-60V50l54-22Z" stroke="#2C4967" stroke-width="2" />
+
+  <path d="M63 127c13-12 29-16 47-10 13 4 25 4 38-6-7 23-26 38-52 38-17 0-28-7-33-22Z" fill="url(#sea)" />
+  <path d="M56 146c13-7 28-8 45-3 14 5 29 3 43-6" stroke="#B9FFF6" stroke-width="6" stroke-linecap="round" opacity="0.85" />
+
+  <path d="M75 97 98 48l39 13-15 11 24 12-30 8 18 16-38 8-21-19Z" fill="url(#gold)" />
+  <path d="M93 66 80 93l18 16 22-5-15-14 25-7-25-12 10-7-22-7Z" fill="#102744" opacity="0.88" />
+  <path d="M119 73 136 79l-18 5 11 10-25 5-9-8 24-6-14-7 14-5Z" fill="#FFE3A3" opacity="0.9" />
+  <circle cx="112" cy="69" r="4" fill="#06121F" />
+
+  <path d="M105 111h31l-37 46 8-32H76l37-48-8 34Z" fill="url(#gold)" />
+  <path d="M95 126h17l-3 12 13-17h-17l3-13-13 18Z" fill="#06121F" opacity="0.72" />
+
+  <path d="M64 56h21M58 70h14M145 126h14" stroke="#58E6D9" stroke-width="5" stroke-linecap="round" opacity="0.55" />
 </svg>
