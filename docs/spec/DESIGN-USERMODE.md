@@ -1258,7 +1258,7 @@ Killed process 3
 - [x] loop_user: 循环打印 + yield，验证调度器工作
 - [x] bad_cli: 验证 #GP 被捕获，进程被杀而非内核崩溃
 - [x] bad_read: 验证 #PF 被捕获，进程被杀
-- [ ] 同时运行多个用户进程 + shell，验证抢占式调度
+- [x] 同时运行多个用户进程 + shell，验证抢占式调度
 - [x] ps 命令显示正确的进程类型和状态
 - [x] syscallstat 显示正确的调用计数
 ```

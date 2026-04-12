@@ -1257,7 +1257,7 @@ Killed process 3
 - [x] loop_user: prints in a loop + yield, verify scheduler works
 - [x] bad_cli: verify #GP is caught, process is killed without kernel crash
 - [x] bad_read: verify #PF is caught, process is killed without kernel crash
-- [ ] Run multiple user processes + shell simultaneously, verify preemptive scheduling
+- [x] Run multiple user processes + shell simultaneously, verify preemptive scheduling
 - [x] ps command shows correct process types and states
 - [x] syscallstat shows correct call counts
 ```

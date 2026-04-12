@@ -1173,6 +1173,19 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "pair")) {
+        const first_pid = process.spawnFlat("loop_tick", user_programs.loop_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn loop_tick", .{});
+            return;
+        };
+        const second_pid = process.spawnFlat("loop_tock", user_programs.loop_alt[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn loop_tock; loop_tick pid={d} is still running", .{first_pid});
+            return;
+        };
+        log.kprintln("runuser: spawned pair tick={d} tock={d}", .{ first_pid, second_pid });
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1192,7 +1205,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|bad_cli|bad_read]", .{});
 }
 
 fn cmdTouch(args: []const u8) void {

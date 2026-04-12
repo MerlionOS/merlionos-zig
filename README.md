@@ -137,7 +137,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
 - [x] Shell integration: `killuser`
 - [x] Protection tests: `bad_cli` and `bad_read`
-- [ ] Multi-user-process preemption
+- [x] Multi-user-process preemption with `runuser pair`
 
 ## Zig vs Rust: Why Rewrite?
 
