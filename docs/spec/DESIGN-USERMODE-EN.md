@@ -1268,8 +1268,9 @@ Killed process 3
 
 ```
 Phase 8a: syscall Infrastructure
-- [ ] src/syscall.zig — syscall dispatch + SYS_WRITE + SYS_EXIT + SYS_GETPID
-- [ ] Modify src/idt.zig — syscallStub changed to full dispatch
+- [x] src/syscall.zig — syscall dispatch + SYS_WRITE + SYS_GETPID + SYS_EXIT shim + stats
+- [x] Modify src/idt.zig — syscallStub changed to full dispatch
+- [x] shell_cmds.zig — syscallstat shows dispatcher stats
 
 Phase 8b: User Address Space
 - [ ] src/user_mem.zig — create / mapUserPage / activate / destroy
@@ -1292,7 +1293,7 @@ Phase 8e: Process Lifecycle
 - [ ] Verify: loop_user + preemption + killuser
 
 Phase 8f: Shell Integration
-- [ ] shell_cmds.zig: runuser / ps / killuser / syscallstat
+- [ ] shell_cmds.zig: runuser / ps / killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] Verify: all test cases
 - [ ] main.zig: add process.init()

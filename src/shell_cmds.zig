@@ -15,6 +15,7 @@ const pmm = @import("pmm.zig");
 const procfs = @import("procfs.zig");
 const scheduler = @import("scheduler.zig");
 const socket = @import("socket.zig");
+const syscall = @import("syscall.zig");
 const task = @import("task.zig");
 const vfs = @import("vfs.zig");
 const vga = @import("vga.zig");
@@ -56,6 +57,7 @@ const commands = [_]Command{
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
+    .{ .name = "syscallstat", .description = "Show syscall statistics", .handler = cmdSyscallstat },
     .{ .name = "tcpclose", .description = "Close a TCP connection", .handler = cmdTcpclose },
     .{ .name = "tcpconnect", .description = "Open a TCP connection", .handler = cmdTcpconnect },
     .{ .name = "tcprecv", .description = "Read data from a TCP connection", .handler = cmdTcprecv },
@@ -1083,6 +1085,21 @@ fn cmdSpawn(args: []const u8) void {
     }
 
     log.kprintln("Failed to spawn task. Task table or stack pool is full.", .{});
+}
+
+fn cmdSyscallstat(_: []const u8) void {
+    const stats = syscall.getStats();
+    log.kprintln("Syscalls: total={d} unknown={d} faults={d}", .{
+        stats.total_calls,
+        stats.unknown_calls,
+        stats.fault_returns,
+    });
+    log.kprintln("  NR NAME       CALLS", .{});
+    for (0..syscall.MAX_SYSCALL + 1) |i| {
+        const calls = stats.by_number[i];
+        if (calls == 0) continue;
+        log.kprintln("  {d: <2} {s: <10} {d}", .{ i, syscall.syscallName(i), calls });
+    }
 }
 
 fn cmdRm(args: []const u8) void {

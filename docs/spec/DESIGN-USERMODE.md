@@ -1269,8 +1269,9 @@ Killed process 3
 
 ```
 Phase 8a: syscall 基础设施
-- [ ] src/syscall.zig — 系统调用分发 + SYS_WRITE + SYS_EXIT + SYS_GETPID
-- [ ] 修改 src/idt.zig — syscallStub 改为完整分发
+- [x] src/syscall.zig — 系统调用分发 + SYS_WRITE + SYS_GETPID + SYS_EXIT shim + 统计
+- [x] 修改 src/idt.zig — syscallStub 改为完整分发
+- [x] shell_cmds.zig — syscallstat 显示 dispatcher 统计
 
 Phase 8b: 用户地址空间
 - [ ] src/user_mem.zig — create / mapUserPage / activate / destroy
@@ -1293,7 +1294,7 @@ Phase 8e: 进程生命周期
 - [ ] 验证: loop_user + 抢占 + killuser
 
 Phase 8f: Shell 集成
-- [ ] shell_cmds.zig: runuser / ps / killuser / syscallstat
+- [ ] shell_cmds.zig: runuser / ps / killuser
 - [ ] user_programs.zig: loop_user / bad_cli / bad_read
 - [ ] 验证: 所有测试用例
 - [ ] main.zig: 添加 process.init()

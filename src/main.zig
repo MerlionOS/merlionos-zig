@@ -27,6 +27,7 @@ const vfs = @import("vfs.zig");
 const procfs = @import("procfs.zig");
 const devfs = @import("devfs.zig");
 const shell = @import("shell.zig");
+const syscall = @import("syscall.zig");
 
 pub const panic = @import("panic.zig").panic;
 
@@ -102,6 +103,8 @@ export fn _start() callconv(.c) noreturn {
 
     idt.init();
     log.kprintln("[cpu] IDT loaded", .{});
+    syscall.init();
+    log.kprintln("[sys] Syscall dispatcher initialized", .{});
 
     pic.init();
     log.kprintln("[cpu] PIC initialized", .{});

@@ -15,3 +15,8 @@ pub fn kprint(comptime fmt: []const u8, args: anytype) void {
 pub fn kprintln(comptime fmt: []const u8, args: anytype) void {
     kprint(fmt ++ "\n", args);
 }
+
+pub fn writeBytes(bytes: []const u8) void {
+    serial.com1.writer().writeAll(bytes) catch {};
+    vga.vga_writer.writeBytes(bytes);
+}

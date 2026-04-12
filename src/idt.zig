@@ -110,10 +110,6 @@ export fn irq1Inner() void {
     pic.sendEoi(1);
 }
 
-export fn syscallInner() void {
-    log.kprintln("[sys] int 0x80", .{});
-}
-
 export fn yieldInner(current_rsp: u64) callconv(.c) u64 {
     return scheduler.yieldFromContext(current_rsp);
 }
@@ -159,7 +155,47 @@ fn irq1Stub() callconv(.naked) void {
 }
 
 fn syscallStub() callconv(.naked) void {
-    asm volatile (pushRegsAndCall("syscallInner", false));
+    asm volatile (
+        \\pushq %%rax
+        \\pushq %%rbx
+        \\pushq %%rcx
+        \\pushq %%rdx
+        \\pushq %%rbp
+        \\pushq %%rsi
+        \\pushq %%rdi
+        \\pushq %%r8
+        \\pushq %%r9
+        \\pushq %%r10
+        \\pushq %%r11
+        \\pushq %%r12
+        \\pushq %%r13
+        \\pushq %%r14
+        \\pushq %%r15
+        \\movq 112(%%rsp), %%rdi
+        \\movq 64(%%rsp), %%rsi
+        \\movq 72(%%rsp), %%rdx
+        \\movq 88(%%rsp), %%rcx
+        \\movq 40(%%rsp), %%r8
+        \\movq 56(%%rsp), %%r9
+        \\call syscallDispatch
+        \\movq %%rax, 112(%%rsp)
+        \\popq %%r15
+        \\popq %%r14
+        \\popq %%r13
+        \\popq %%r12
+        \\popq %%r11
+        \\popq %%r10
+        \\popq %%r9
+        \\popq %%r8
+        \\popq %%rdi
+        \\popq %%rsi
+        \\popq %%rbp
+        \\popq %%rdx
+        \\popq %%rcx
+        \\popq %%rbx
+        \\popq %%rax
+        \\iretq
+    );
 }
 
 fn yieldStub() callconv(.naked) void {
