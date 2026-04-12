@@ -1164,8 +1164,17 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "loop")) {
+        const pid = process.spawnFlat("loop_user", user_programs.loop_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn loop", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned loop pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
 
-    log.kprintln("Usage: runuser [hello]", .{});
+    log.kprintln("Usage: runuser [hello|loop]", .{});
 }
 
 fn cmdTouch(args: []const u8) void {

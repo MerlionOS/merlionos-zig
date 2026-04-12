@@ -1254,13 +1254,13 @@ Killed process 3
 ### 9.4 测试用例清单
 
 ```
-- [ ] hello_user: 打印并正常退出
-- [ ] loop_user: 循环打印 + yield，验证调度器工作
+- [x] hello_user: 打印并正常退出
+- [x] loop_user: 循环打印 + yield，验证调度器工作
 - [ ] bad_cli: 验证 #GP 被捕获，进程被杀而非内核崩溃
 - [ ] bad_read: 验证 #PF 被捕获，进程被杀
 - [ ] 同时运行多个用户进程 + shell，验证抢占式调度
-- [ ] ps 命令显示正确的进程类型和状态
-- [ ] syscallstat 显示正确的调用计数
+- [x] ps 命令显示正确的进程类型和状态
+- [x] syscallstat 显示正确的调用计数
 ```
 
 ---
@@ -1289,14 +1289,16 @@ Phase 8d: ELF 加载器
 - [ ] 验证: 解析一个 ELF，打印段信息
 
 Phase 8e: 进程生命周期
-- [ ] syscall.zig 补充: SYS_READ / SYS_YIELD / SYS_SLEEP / SYS_BRK
+- [x] syscall.zig 补充: SYS_YIELD
+- [ ] syscall.zig 补充: SYS_READ / SYS_SLEEP / SYS_BRK
 - [ ] scheduler.zig: blocked 任务唤醒
-- [ ] 验证: loop_user + 抢占 + killuser
+- [x] 验证: loop_user + 抢占 + killuser
 
 Phase 8f: Shell 集成
 - [x] shell_cmds.zig: runuser / ps 用户态显示
 - [x] shell_cmds.zig: killuser
-- [ ] user_programs.zig: loop_user / bad_cli / bad_read
+- [x] user_programs.zig: loop_user
+- [ ] user_programs.zig: bad_cli / bad_read
 - [ ] 验证: 所有测试用例
 - [x] main.zig: 添加 process.init()
 ```

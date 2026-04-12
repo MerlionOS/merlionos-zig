@@ -130,10 +130,13 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] User process loading and context switching via `process.zig`, `user_programs.zig`, `task.zig`, and `scheduler.zig`
 - [x] Built-in `hello_user` flat program runs through Ring 3, `SYS_WRITE`, and `SYS_EXIT`
 - [x] Shell integration: `runuser hello` and user/process details in `ps`
+- [x] Process lifecycle syscall: `SYS_YIELD`
+- [x] Built-in `loop_user` flat program runs through Ring 3, `SYS_WRITE`, and `SYS_YIELD`
+- [x] Scheduling smoke test: `runuser loop`, shell preemption, and live `killuser`
 - [ ] ELF loader in `elf.zig`
-- [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_YIELD`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
+- [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
 - [x] Shell integration: `killuser`
-- [ ] Protection and scheduling tests: `loop_user`, `bad_cli`, `bad_read`, and multi-process preemption
+- [ ] Protection tests: `bad_cli`, `bad_read`, and multi-user-process preemption
 
 ## Zig vs Rust: Why Rewrite?
 

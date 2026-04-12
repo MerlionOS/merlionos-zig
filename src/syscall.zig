@@ -2,6 +2,7 @@ const std = @import("std");
 
 const log = @import("log.zig");
 const process = @import("process.zig");
+const scheduler = @import("scheduler.zig");
 const task = @import("task.zig");
 const vmm = @import("vmm.zig");
 
@@ -113,8 +114,9 @@ fn dispatch(ctx: SyscallContext) u64 {
     return switch (syscall_number) {
         .EXIT => sysExit(ctx.arg1),
         .WRITE => sysWrite(ctx.arg1, ctx.arg2, ctx.arg3),
+        .YIELD => sysYield(),
         .GETPID => sysGetpid(),
-        .READ, .YIELD, .SLEEP, .BRK, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
+        .READ, .SLEEP, .BRK, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
     };
 }
 
@@ -138,6 +140,11 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64 {
 
 fn sysGetpid() u64 {
     return task.currentPid() orelse 0;
+}
+
+fn sysYield() u64 {
+    _ = scheduler.yield();
+    return 0;
 }
 
 fn validateUserBuffer(ptr: u64, len: usize) bool {
