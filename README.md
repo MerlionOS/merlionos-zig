@@ -109,7 +109,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] External command-backed host bridge
 - [x] OpenAI Responses API host bridge adapter
 
-### Phase 9: TCP/IP Stack (current)
+### Phase 9: TCP/IP Stack (complete)
 - [x] TCP/IP stack design document: `docs/spec/DESIGN-TCPIP.md`
 - [x] Shared network types, configuration, endian helpers, and checksum helpers in `net.zig`
 - [x] Ethernet frame send/receive dispatch layer and `netpoll`
@@ -120,6 +120,16 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] TCP connection state machine with connect/send/recv/close
 - [x] DNS A-record client over UDP
 - [x] Socket-like API for future shell/userland integration
+
+### Phase 10: User Mode (current)
+- [x] User mode design document: `docs/spec/DESIGN-USERMODE.md`
+- [ ] Syscall infrastructure: `int 0x80` dispatch, `SYS_WRITE`, `SYS_EXIT`, `SYS_GETPID`, syscall stats
+- [ ] User address space management in `user_mem.zig`
+- [ ] User process loading and context switching via `process.zig`, `user_programs.zig`, `task.zig`, and `scheduler.zig`
+- [ ] ELF loader in `elf.zig`
+- [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_YIELD`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
+- [ ] Shell integration: `runuser`, `killuser`, `syscallstat`, and user/process details in `ps`
+- [ ] Protection and scheduling tests: `hello_user`, `loop_user`, `bad_cli`, `bad_read`, and multi-process preemption
 
 ## Zig vs Rust: Why Rewrite?
 
@@ -135,6 +145,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 ## Documentation
 
 - [Design and implementation plan](docs/DESIGN.md)
+- [User mode implementation spec](docs/spec/DESIGN-USERMODE.md)
 - [Contributor guide](AGENTS.md)
 - [Agent workflow notes](CLAUDE.md)
 
