@@ -177,6 +177,20 @@ pub fn pidExists(pid: u32) bool {
     return false;
 }
 
+pub fn wakeBlocked(now: u64) usize {
+    var count: usize = 0;
+    for (0..MAX_TASKS) |i| {
+        if (tasks[i]) |*task_entry| {
+            if (task_entry.state == .blocked and task_entry.wake_tick > 0 and now >= task_entry.wake_tick) {
+                task_entry.state = .ready;
+                task_entry.wake_tick = 0;
+                count += 1;
+            }
+        }
+    }
+    return count;
+}
+
 pub fn setCurrentIndex(index: usize) void {
     current_task_index = index;
 }

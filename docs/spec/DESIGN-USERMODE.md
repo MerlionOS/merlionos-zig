@@ -1302,14 +1302,17 @@ Phase 8d: ELF 加载器
 
 Phase 8e: 进程生命周期
 - [x] syscall.zig 补充: SYS_YIELD
-- [ ] syscall.zig 补充: SYS_READ / SYS_SLEEP / SYS_BRK
-- [ ] scheduler.zig: blocked 任务唤醒
+- [x] syscall.zig 补充: SYS_SLEEP
+- [ ] syscall.zig 补充: SYS_READ / SYS_BRK
+- [x] scheduler.zig: blocked 任务唤醒
 - [x] 验证: loop_user + 抢占 + killuser
+- [x] 验证: sleep_user 通过 SYS_SLEEP 阻塞，tick 唤醒后继续执行并退出
 
 Phase 8f: Shell 集成
 - [x] shell_cmds.zig: runuser / ps 用户态显示
 - [x] shell_cmds.zig: killuser
 - [x] user_programs.zig: loop_user
+- [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: bad_cli / bad_read
 - [ ] 验证: 所有测试用例
 - [x] main.zig: 添加 process.init()

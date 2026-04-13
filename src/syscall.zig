@@ -116,7 +116,8 @@ fn dispatch(ctx: SyscallContext) u64 {
         .WRITE => sysWrite(ctx.arg1, ctx.arg2, ctx.arg3),
         .YIELD => sysYield(),
         .GETPID => sysGetpid(),
-        .READ, .SLEEP, .BRK, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
+        .SLEEP => sysSleep(ctx.arg1),
+        .READ, .BRK, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
     };
 }
 
@@ -144,6 +145,11 @@ fn sysGetpid() u64 {
 
 fn sysYield() u64 {
     _ = scheduler.yield();
+    return 0;
+}
+
+fn sysSleep(ticks: u64) u64 {
+    if (!scheduler.sleepCurrent(ticks)) return err(EINVAL);
     return 0;
 }
 

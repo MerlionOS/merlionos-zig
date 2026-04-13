@@ -135,7 +135,8 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Scheduling smoke test: `runuser loop`, shell preemption, and live `killuser`
 - [x] ELF parser/load helper in `elf.zig` with `elftest` segment/load smoke check
 - [x] ELF-backed user process execution from VFS with `/bin/hello.elf` and `runelf`
-- [ ] Process lifecycle syscalls: `SYS_READ`, `SYS_SLEEP`, `SYS_BRK`, and blocked-task wakeups
+- [x] Process lifecycle syscall: `SYS_SLEEP` with blocked-task wakeups
+- [ ] Process lifecycle syscalls: `SYS_READ` and `SYS_BRK`
 - [x] Shell integration: `killuser`
 - [x] Protection tests: `bad_cli` and `bad_read`
 - [x] Multi-user-process preemption with `runuser pair`

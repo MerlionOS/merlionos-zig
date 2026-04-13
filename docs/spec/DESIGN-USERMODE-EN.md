@@ -1301,14 +1301,17 @@ Phase 8d: ELF Loader
 
 Phase 8e: Process Lifecycle
 - [x] syscall.zig additions: SYS_YIELD
-- [ ] syscall.zig additions: SYS_READ / SYS_SLEEP / SYS_BRK
-- [ ] scheduler.zig: blocked task wake-up
+- [x] syscall.zig additions: SYS_SLEEP
+- [ ] syscall.zig additions: SYS_READ / SYS_BRK
+- [x] scheduler.zig: blocked task wake-up
 - [x] Verify: loop_user + preemption + killuser
+- [x] Verify: sleep_user blocks through SYS_SLEEP, wakes on tick, continues, and exits
 
 Phase 8f: Shell Integration
 - [x] shell_cmds.zig: runuser / ps user-mode display
 - [x] shell_cmds.zig: killuser
 - [x] user_programs.zig: loop_user
+- [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: bad_cli / bad_read
 - [ ] Verify: all test cases
 - [x] main.zig: add process.init()

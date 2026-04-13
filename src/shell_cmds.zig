@@ -333,6 +333,7 @@ fn cmdInfo(_: []const u8) void {
         if (scheduler.hasPreemptPending()) "yes" else "no",
         scheduler.getPreemptRequests(),
     });
+    log.kprintln("Blocked wakeups: {d}", .{scheduler.getBlockedWakeups()});
 }
 
 fn cmdKill(args: []const u8) void {
@@ -1189,6 +1190,15 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "sleep")) {
+        const pid = process.spawnFlat("sleep_user", user_programs.sleep_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn sleep", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned sleep pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1208,7 +1218,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|pair|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|sleep|bad_cli|bad_read]", .{});
 }
 
 fn cmdRunelf(args: []const u8) void {

@@ -11,6 +11,7 @@ var yield_requests: u64 = 0;
 var time_slice_expirations: u64 = 0;
 var preempt_requests: u64 = 0;
 var preempt_pending: bool = false;
+var blocked_wakeups: u64 = 0;
 
 pub fn init() void {
     tick_count = 0;
@@ -20,11 +21,13 @@ pub fn init() void {
     time_slice_expirations = 0;
     preempt_requests = 0;
     preempt_pending = false;
+    blocked_wakeups = 0;
 }
 
 pub fn timerTickFromContext(current_rsp: u64) callconv(.c) u64 {
     tick_count += 1;
     task.accountCurrentTick();
+    blocked_wakeups += task.wakeBlocked(tick_count);
 
     if (quantum != 0 and tick_count % quantum == 0) {
         time_slice_expirations += 1;
@@ -48,6 +51,26 @@ pub export fn yieldFromContext(current_rsp: u64) callconv(.c) u64 {
 
 pub fn yield() bool {
     if (task.runnableCount() <= 1) return false;
+
+    yield_requests += 1;
+    task.noteCurrentYield();
+    preempt_pending = false;
+    task.yieldCurrent();
+    return true;
+}
+
+pub fn sleepCurrent(ticks: u64) bool {
+    if (ticks == 0) return yield();
+    if (~@as(u64, 0) - tick_count < ticks) return false;
+
+    const current = task.currentTask() orelse return false;
+    current.state = .blocked;
+    current.wake_tick = tick_count + ticks;
+    if (task.runnableCount() == 0) {
+        current.state = .running;
+        current.wake_tick = 0;
+        return false;
+    }
 
     yield_requests += 1;
     task.noteCurrentYield();
@@ -82,6 +105,10 @@ pub fn getTimeSliceExpirations() u64 {
 
 pub fn getPreemptRequests() u64 {
     return preempt_requests;
+}
+
+pub fn getBlockedWakeups() u64 {
+    return blocked_wakeups;
 }
 
 pub fn hasPreemptPending() bool {
