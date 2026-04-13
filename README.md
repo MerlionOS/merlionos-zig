@@ -121,7 +121,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] DNS A-record client over UDP
 - [x] Socket-like API for future shell/userland integration
 
-### Phase 10: User Mode (current)
+### Phase 10: User Mode (complete)
 - [x] User mode design document: `docs/spec/DESIGN-USERMODE.md`
 - [x] Syscall infrastructure: `int 0x80` dispatch, `SYS_WRITE`, `SYS_GETPID`, `SYS_EXIT` teardown, syscall stats
 - [x] `syscallstat` shell command for dispatcher stats
@@ -142,6 +142,17 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Shell integration: `killuser`
 - [x] Protection tests: `bad_cli` and `bad_read`
 - [x] Multi-user-process preemption with `runuser pair`
+
+### Phase 11: Userland File ABI (current)
+- [x] Userland file syscall roadmap/spec updates
+- [x] Per-process VFS file descriptor table
+- [x] Process lifecycle syscall: `SYS_OPEN`
+- [x] Process lifecycle syscall: `SYS_CLOSE`
+- [x] Process lifecycle syscall: `SYS_STAT`
+- [x] File-backed `SYS_READ` for user fd >= 3
+- [x] Built-in `file_user` flat program and `runuser file` shell integration
+- [x] Phase 11 QEMU regression after file syscalls
+- [ ] Process lifecycle syscall: `SYS_MMAP`
 
 ## Zig vs Rust: Why Rewrite?
 

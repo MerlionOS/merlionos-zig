@@ -2,9 +2,11 @@ const std = @import("std");
 
 const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
+const procfs = @import("procfs.zig");
 const process = @import("process.zig");
 const scheduler = @import("scheduler.zig");
 const task = @import("task.zig");
+const vfs = @import("vfs.zig");
 const vmm = @import("vmm.zig");
 
 pub const SYS = enum(u64) {
@@ -35,6 +37,7 @@ const PAGE_MASK: u64 = 0xFFF;
 const PAGE_SIZE: u64 = 4096;
 const MAX_WRITE_BYTES: usize = 4096;
 const MAX_READ_BYTES: usize = 4096;
+const MAX_USER_PATH: usize = 256;
 
 pub const SyscallContext = struct {
     number: u64,
@@ -121,7 +124,10 @@ fn dispatch(ctx: SyscallContext) u64 {
         .GETPID => sysGetpid(),
         .SLEEP => sysSleep(ctx.arg1),
         .BRK => sysBrk(ctx.arg1),
-        .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
+        .OPEN => sysOpen(ctx.arg1, ctx.arg2),
+        .CLOSE => sysClose(ctx.arg1),
+        .STAT => sysStat(ctx.arg1, ctx.arg2, ctx.arg3),
+        .MMAP => err(ENOSYS),
     };
 }
 
@@ -144,8 +150,12 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64 {
 }
 
 fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64 {
-    if (fd != 0) return err(EBADF);
     if (count == 0) return 0;
+    if (fd == 0) return sysReadKeyboard(buf_ptr, count);
+    return sysReadFile(fd, buf_ptr, count);
+}
+
+fn sysReadKeyboard(buf_ptr: u64, count: u64) u64 {
     if (keyboard.userInputOwner()) |owner| {
         if (task.currentPid() != owner) return 0;
     }
@@ -185,6 +195,25 @@ fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64 {
     return out_len;
 }
 
+fn sysReadFile(fd: u64, buf_ptr: u64, count: u64) u64 {
+    if (fd == 1 or fd == 2) return err(EBADF);
+
+    const capped_count = if (count > MAX_READ_BYTES) MAX_READ_BYTES else count;
+    const len: usize = @intCast(capped_count);
+    if (!validateUserBuffer(buf_ptr, len)) return err(EFAULT);
+
+    var buffer: [MAX_READ_BYTES]u8 = undefined;
+    return switch (process.readCurrentFile(fd, buffer[0..len])) {
+        .ok => |read_len| {
+            if (read_len == 0) return 0;
+            if (!copyToUser(buf_ptr, buffer[0..read_len])) return err(EFAULT);
+            return read_len;
+        },
+        .not_user => err(EINVAL),
+        .bad_fd => err(EBADF),
+    };
+}
+
 fn sysGetpid() u64 {
     return task.currentPid() orelse 0;
 }
@@ -205,6 +234,47 @@ fn sysBrk(new_brk: u64) u64 {
         .not_user, .invalid => err(EINVAL),
         .no_memory => err(ENOMEM),
     };
+}
+
+fn sysOpen(path_ptr: u64, flags: u64) u64 {
+    if (flags != 0) return err(EINVAL);
+
+    var path_buffer: [MAX_USER_PATH]u8 = undefined;
+    const path = copyUserString(&path_buffer, path_ptr) orelse return err(EFAULT);
+    const inode_idx = vfs.resolve(path) orelse return err(ENOENT);
+    const inode = vfs.getInode(inode_idx) orelse return err(ENOENT);
+    if (inode.node_type == .directory) return err(EINVAL);
+    if (inode.node_type == .proc_node) procfs.prepareRead(path);
+
+    return switch (process.openCurrentFile(inode_idx)) {
+        .ok => |fd| fd,
+        .not_user, .invalid => err(EINVAL),
+        .no_fd => err(ENOMEM),
+    };
+}
+
+fn sysClose(fd: u64) u64 {
+    return switch (process.closeCurrentFile(fd)) {
+        .ok => 0,
+        .not_user => err(EINVAL),
+        .bad_fd => err(EBADF),
+    };
+}
+
+fn sysStat(path_ptr: u64, stat_ptr: u64, stat_len: u64) u64 {
+    const expected_len: u64 = @sizeOf(process.FileStat);
+    if (stat_len < expected_len) return err(EINVAL);
+
+    var path_buffer: [MAX_USER_PATH]u8 = undefined;
+    const path = copyUserString(&path_buffer, path_ptr) orelse return err(EFAULT);
+    const inode_idx = vfs.resolve(path) orelse return err(ENOENT);
+    const inode = vfs.getInode(inode_idx) orelse return err(ENOENT);
+    if (inode.node_type == .proc_node) procfs.prepareRead(path);
+
+    const stat = process.statInode(inode_idx) orelse return err(ENOENT);
+    const stat_bytes = std.mem.asBytes(&stat);
+    if (!copyToUser(stat_ptr, stat_bytes)) return err(EFAULT);
+    return expected_len;
 }
 
 fn validateUserBuffer(ptr: u64, len: usize) bool {
@@ -236,6 +306,24 @@ fn copyToUser(user_dst: u64, src: []const u8) bool {
     const dst: [*]u8 = @ptrFromInt(user_dst);
     @memcpy(dst[0..src.len], src);
     return true;
+}
+
+fn copyUserString(buffer: *[MAX_USER_PATH]u8, user_src: u64) ?[]const u8 {
+    if (user_src == 0) return null;
+
+    var index: usize = 0;
+    while (index < buffer.len) : (index += 1) {
+        const offset: u64 = @intCast(index);
+        const addr = user_src +% offset;
+        if (addr < user_src or !validateUserBuffer(addr, 1)) return null;
+
+        const src: *const u8 = @ptrFromInt(addr);
+        const byte = src.*;
+        if (byte == 0) return buffer[0..index];
+        buffer[index] = byte;
+    }
+
+    return null;
 }
 
 fn err(value: i64) u64 {

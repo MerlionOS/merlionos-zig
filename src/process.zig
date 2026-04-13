@@ -6,8 +6,11 @@ const log = @import("log.zig");
 const pmm = @import("pmm.zig");
 const task = @import("task.zig");
 const user_mem = @import("user_mem.zig");
+const vfs = @import("vfs.zig");
 
 const MAX_PROCESSES: usize = task.MAX_TASKS;
+pub const MAX_FILE_DESCRIPTORS: usize = 16;
+pub const FIRST_USER_FD: u64 = 3;
 const PAGE_SIZE: u64 = pmm.PAGE_SIZE;
 const PAGE_FRAME_MASK: u64 = 0x000F_FFFF_FFFF_F000;
 
@@ -24,6 +27,7 @@ pub const ProcessInfo = struct {
     entry_point: u64,
     exit_code: i32,
     active: bool,
+    fds: [MAX_FILE_DESCRIPTORS]FileDescriptor,
 };
 
 pub const KillUserResult = enum {
@@ -39,6 +43,39 @@ pub const BrkResult = union(enum) {
     invalid,
     no_memory,
 };
+
+pub const OpenFileResult = union(enum) {
+    ok: u64,
+    not_user,
+    invalid,
+    no_fd,
+};
+
+pub const CloseFileResult = enum {
+    ok,
+    not_user,
+    bad_fd,
+};
+
+pub const ReadFileResult = union(enum) {
+    ok: usize,
+    not_user,
+    bad_fd,
+};
+
+pub const FileStat = extern struct {
+    node_type: u64,
+    size: u64,
+    inode: u64,
+};
+
+pub const FileDescriptor = struct {
+    active: bool = false,
+    inode: u16 = 0,
+    offset: usize = 0,
+};
+
+const EMPTY_FILE_DESCRIPTORS = [_]FileDescriptor{.{}} ** MAX_FILE_DESCRIPTORS;
 
 var process_table: [MAX_PROCESSES]ProcessInfo = [_]ProcessInfo{emptyProcessInfo()} ** MAX_PROCESSES;
 var address_spaces: [MAX_PROCESSES]user_mem.AddressSpace = undefined;
@@ -103,6 +140,7 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
         .entry_point = entry,
         .exit_code = 0,
         .active = true,
+        .fds = EMPTY_FILE_DESCRIPTORS,
     };
 
     return spawned.pid;
@@ -157,6 +195,7 @@ pub fn spawnElf(name: []const u8, data: []const u8) ?u32 {
         .entry_point = parse_result.entry_point,
         .exit_code = 0,
         .active = true,
+        .fds = EMPTY_FILE_DESCRIPTORS,
     };
 
     return spawned.pid;
@@ -167,6 +206,7 @@ pub fn exitCurrent(exit_code: i32) noreturn {
         if (getProcessInfoMutable(current.pid)) |info| {
             info.exit_code = exit_code;
             info.active = false;
+            clearFileDescriptors(info);
             if (info.address_space_slot) |slot| {
                 info.address_space_slot = null;
                 releaseAddressSpace(slot);
@@ -218,6 +258,7 @@ pub fn killUser(pid: u32) KillUserResult {
 
     keyboard.endUserInput(pid);
     info.active = false;
+    clearFileDescriptors(info);
     if (info.address_space_slot) |slot| {
         info.address_space_slot = null;
         releaseAddressSpace(slot);
@@ -254,6 +295,58 @@ pub fn brkCurrent(new_brk: u64) BrkResult {
     };
 }
 
+pub fn openCurrentFile(inode_idx: u16) OpenFileResult {
+    const info = currentProcessInfoMutable() orelse return .not_user;
+    const inode = vfs.getInode(inode_idx) orelse return .invalid;
+    if (inode.node_type == .directory) return .invalid;
+
+    for (&info.fds, 0..) |*fd, index| {
+        if (fd.active) continue;
+        fd.* = .{
+            .active = true,
+            .inode = inode_idx,
+            .offset = 0,
+        };
+        return .{ .ok = FIRST_USER_FD + @as(u64, @intCast(index)) };
+    }
+
+    return .no_fd;
+}
+
+pub fn closeCurrentFile(fd: u64) CloseFileResult {
+    const info = currentProcessInfoMutable() orelse return .not_user;
+    const index = fdIndex(fd) orelse return .bad_fd;
+    if (!info.fds[index].active) return .bad_fd;
+
+    info.fds[index] = .{};
+    return .ok;
+}
+
+pub fn readCurrentFile(fd: u64, dest: []u8) ReadFileResult {
+    const info = currentProcessInfoMutable() orelse return .not_user;
+    const index = fdIndex(fd) orelse return .bad_fd;
+    const descriptor = &info.fds[index];
+    if (!descriptor.active) return .bad_fd;
+
+    const data = vfs.readFile(descriptor.inode) orelse return .bad_fd;
+    if (descriptor.offset >= data.len) return .{ .ok = 0 };
+
+    const remaining = data.len - descriptor.offset;
+    const copy_len = @min(dest.len, remaining);
+    @memcpy(dest[0..copy_len], data[descriptor.offset .. descriptor.offset + copy_len]);
+    descriptor.offset += copy_len;
+    return .{ .ok = copy_len };
+}
+
+pub fn statInode(inode_idx: u16) ?FileStat {
+    const inode = vfs.getInode(inode_idx) orelse return null;
+    return .{
+        .node_type = @intCast(@intFromEnum(inode.node_type)),
+        .size = @intCast(inode.data_len),
+        .inode = @intCast(inode_idx),
+    };
+}
+
 pub fn onContextSwitch(new_task_index: usize) void {
     const next_task = task.getTask(new_task_index) orelse {
         activateKernel();
@@ -287,11 +380,29 @@ fn activateKernel() void {
     if (kernel_cr3 != 0) cpu.writeCr3(kernel_cr3);
 }
 
+fn currentProcessInfoMutable() ?*ProcessInfo {
+    const pid = task.currentPid() orelse return null;
+    const info = getProcessInfoMutable(pid) orelse return null;
+    if (!info.active or info.address_space_slot == null) return null;
+    return info;
+}
+
 fn getProcessInfoMutable(pid: u32) ?*ProcessInfo {
     for (&process_table) |*info| {
         if (info.pid == pid and info.proc_type == .user) return info;
     }
     return null;
+}
+
+fn fdIndex(fd: u64) ?usize {
+    if (fd < FIRST_USER_FD) return null;
+    const index = fd - FIRST_USER_FD;
+    if (index >= @as(u64, @intCast(MAX_FILE_DESCRIPTORS))) return null;
+    return @intCast(index);
+}
+
+fn clearFileDescriptors(info: *ProcessInfo) void {
+    info.fds = EMPTY_FILE_DESCRIPTORS;
 }
 
 fn findFreeSlot() ?usize {
@@ -334,5 +445,6 @@ fn emptyProcessInfo() ProcessInfo {
         .entry_point = 0,
         .exit_code = 0,
         .active = false,
+        .fds = EMPTY_FILE_DESCRIPTORS,
     };
 }

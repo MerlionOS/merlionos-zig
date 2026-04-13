@@ -207,8 +207,8 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 
 ```zig
-/// SYS_READ: Read data from input
-/// fd: file descriptor (0=stdin/keyboard)
+/// SYS_READ: Read data from input or an opened VFS file
+/// fd: file descriptor (0=stdin/keyboard, >=3=VFS file)
 /// buf_ptr: user-mode buffer address
 /// count: maximum number of bytes to read
 /// Returns: actual number of bytes read
@@ -216,12 +216,18 @@ fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 
 ```
-1. If fd != 0 → return EBADF
+1. If count == 0 → return 0
 2. Validate user buffer (same as sysWrite)
-3. If a foreground stdin owner exists, only that user process may consume the keyboard buffer
-4. Read at most count bytes from the keyboard buffer
-5. Copy to user memory
-6. return actual number of bytes read (may be 0, meaning no input available)
+3. If fd == 0:
+   - If a foreground stdin owner exists, only that user process may consume the keyboard buffer
+   - Read at most count bytes from the keyboard buffer
+4. If fd >= 3:
+   - Look up the VFS inode and offset in the current process fd table
+   - Copy at most count bytes from inode data[offset..]
+   - Advance the fd offset
+5. If fd == 1/2 or fd is invalid → return EBADF
+6. Copy to user memory
+7. return actual number of bytes read (may be 0)
 ```
 
 ```zig
@@ -273,6 +279,62 @@ fn sysBrk(new_brk: u64) u64;
 5. If new_brk < current brk:
    Release excess pages
 6. Update brk, return new brk
+```
+
+```zig
+/// SYS_OPEN: Open a VFS file
+/// path_ptr: user-mode NUL-terminated absolute path
+/// flags: currently only 0 is supported (read-only)
+/// Returns: fd >= 3, or error code
+fn sysOpen(path_ptr: u64, flags: u64) u64;
+```
+
+```
+1. If flags != 0 → return EINVAL
+2. Copy a NUL-terminated path from user memory, capped at 256 bytes
+3. vfs.resolve(path); if missing → return ENOENT
+4. If the target is a directory → return EINVAL
+5. If the target is a procfs node, call procfs.prepareRead(path) first
+6. Allocate a slot in the current process fd table and return fd; no free slot → return ENOMEM
+```
+
+```zig
+/// SYS_CLOSE: Close a current-process file descriptor
+/// fd: fd returned by SYS_OPEN
+/// Returns: 0, or error code
+fn sysClose(fd: u64) u64;
+```
+
+```
+1. If fd is not in the current process fd table → return EBADF
+2. Clear the fd slot
+3. return 0
+```
+
+```zig
+/// SYS_STAT: Query VFS inode metadata
+/// path_ptr: user-mode NUL-terminated absolute path
+/// stat_ptr: user-mode FileStat output buffer
+/// stat_len: output buffer length, at least sizeof(FileStat)
+/// Returns: sizeof(FileStat), or error code
+fn sysStat(path_ptr: u64, stat_ptr: u64, stat_len: u64) u64;
+```
+
+```zig
+pub const FileStat = extern struct {
+    node_type: u64,
+    size: u64,
+    inode: u64,
+};
+```
+
+```
+1. If stat_len < sizeof(FileStat) → return EINVAL
+2. Copy a NUL-terminated path from user memory, capped at 256 bytes
+3. vfs.resolve(path); if missing → return ENOENT
+4. If the target is a procfs node, call procfs.prepareRead(path) first
+5. Write FileStat back to the user buffer
+6. return sizeof(FileStat)
 ```
 
 ```zig
@@ -1327,4 +1389,14 @@ Phase 8f: Shell Integration
 - [x] user_programs.zig: bad_cli / bad_read
 - [x] Verify: full Phase 10 regression after SYS_READ lands
 - [x] main.zig: add process.init()
+
+Phase 8g: Userland File ABI
+- [x] process.zig: per-process VFS fd table
+- [x] syscall.zig additions: SYS_OPEN
+- [x] syscall.zig additions: SYS_CLOSE
+- [x] syscall.zig additions: SYS_STAT
+- [x] syscall.zig: SYS_READ supports opened VFS fds
+- [x] shell_cmds.zig / user_programs.zig: runuser file
+- [x] Verify: runuser file prints /proc/version and exits normally
+- [ ] syscall.zig additions: SYS_MMAP
 ```

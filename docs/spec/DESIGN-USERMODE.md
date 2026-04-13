@@ -207,8 +207,8 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 
 ```zig
-/// SYS_READ: 从输入读取数据
-/// fd: 文件描述符（0=stdin/keyboard）
+/// SYS_READ: 从输入或已打开 VFS 文件读取数据
+/// fd: 文件描述符（0=stdin/keyboard, >=3=VFS 文件）
 /// buf_ptr: 用户态缓冲区地址
 /// count: 最大读取字节数
 /// 返回: 实际读取的字节数
@@ -216,12 +216,18 @@ fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 
 ```
-1. 如果 fd != 0 → return EBADF
+1. 如果 count == 0 → return 0
 2. 验证用户缓冲区（同 sysWrite）
-3. 如果存在前台 stdin owner，则只有该用户进程可以消费 keyboard 缓冲区
-4. 从 keyboard 缓冲区读取最多 count 字节
-5. 复制到用户内存
-6. return 实际读取的字节数（可能为 0，表示暂无输入）
+3. 如果 fd == 0:
+   - 如果存在前台 stdin owner，则只有该用户进程可以消费 keyboard 缓冲区
+   - 从 keyboard 缓冲区读取最多 count 字节
+4. 如果 fd >= 3:
+   - 在当前进程 fd 表中查找 VFS inode 和 offset
+   - 从 inode data[offset..] 复制最多 count 字节
+   - 更新 fd offset
+5. 如果 fd == 1/2 或 fd 无效 → return EBADF
+6. 复制到用户内存
+7. return 实际读取的字节数（可能为 0）
 ```
 
 ```zig
@@ -273,6 +279,62 @@ fn sysBrk(new_brk: u64) u64;
 5. 如果 new_brk < 当前 brk:
    释放多余的页
 6. 更新 brk，return 新的 brk
+```
+
+```zig
+/// SYS_OPEN: 打开 VFS 文件
+/// path_ptr: 用户态 NUL 结尾绝对路径
+/// flags: 当前仅支持 0（只读）
+/// 返回: fd >= 3，或错误码
+fn sysOpen(path_ptr: u64, flags: u64) u64;
+```
+
+```
+1. 如果 flags != 0 → return EINVAL
+2. 从用户内存复制 NUL 结尾路径，最大 256 字节
+3. vfs.resolve(path)，找不到 → return ENOENT
+4. 如果目标是目录 → return EINVAL
+5. 如果目标是 procfs 节点，先调用 procfs.prepareRead(path)
+6. 在当前进程 fd 表中分配槽位，返回 fd；无空位 → return ENOMEM
+```
+
+```zig
+/// SYS_CLOSE: 关闭当前进程文件描述符
+/// fd: SYS_OPEN 返回的 fd
+/// 返回: 0，或错误码
+fn sysClose(fd: u64) u64;
+```
+
+```
+1. 如果 fd 不在当前进程 fd 表中 → return EBADF
+2. 清空 fd 槽位
+3. return 0
+```
+
+```zig
+/// SYS_STAT: 查询 VFS inode 元数据
+/// path_ptr: 用户态 NUL 结尾绝对路径
+/// stat_ptr: 用户态 FileStat 输出缓冲区
+/// stat_len: 输出缓冲区长度，至少 sizeof(FileStat)
+/// 返回: sizeof(FileStat)，或错误码
+fn sysStat(path_ptr: u64, stat_ptr: u64, stat_len: u64) u64;
+```
+
+```zig
+pub const FileStat = extern struct {
+    node_type: u64,
+    size: u64,
+    inode: u64,
+};
+```
+
+```
+1. 如果 stat_len < sizeof(FileStat) → return EINVAL
+2. 从用户内存复制 NUL 结尾路径，最大 256 字节
+3. vfs.resolve(path)，找不到 → return ENOENT
+4. 如果目标是 procfs 节点，先调用 procfs.prepareRead(path)
+5. 写回 FileStat 到用户缓冲区
+6. return sizeof(FileStat)
 ```
 
 ```zig
@@ -1328,4 +1390,14 @@ Phase 8f: Shell 集成
 - [x] user_programs.zig: bad_cli / bad_read
 - [x] 验证: SYS_READ 完成后的完整 Phase 10 回归测试
 - [x] main.zig: 添加 process.init()
+
+Phase 8g: 用户态文件 ABI
+- [x] process.zig: 每进程 VFS fd 表
+- [x] syscall.zig 补充: SYS_OPEN
+- [x] syscall.zig 补充: SYS_CLOSE
+- [x] syscall.zig 补充: SYS_STAT
+- [x] syscall.zig: SYS_READ 支持已打开 VFS fd
+- [x] shell_cmds.zig / user_programs.zig: runuser file
+- [x] 验证: runuser file 打印 /proc/version 并正常退出
+- [ ] syscall.zig 补充: SYS_MMAP
 ```
