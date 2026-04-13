@@ -1,6 +1,7 @@
 const cpu = @import("cpu.zig");
 const elf = @import("elf.zig");
 const gdt = @import("gdt.zig");
+const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const pmm = @import("pmm.zig");
 const task = @import("task.zig");
@@ -171,6 +172,7 @@ pub fn exitCurrent(exit_code: i32) noreturn {
                 releaseAddressSpace(slot);
             }
         }
+        keyboard.endUserInput(current.pid);
         current.state = .finished;
         log.kprintln("[proc] user process {d} exited code={d}", .{ current.pid, exit_code });
     }
@@ -214,6 +216,7 @@ pub fn killUser(pid: u32) KillUserResult {
     };
     if (task.currentPid() == pid) return .busy_current;
 
+    keyboard.endUserInput(pid);
     info.active = false;
     if (info.address_space_slot) |slot| {
         info.address_space_slot = null;

@@ -40,6 +40,7 @@ var buf_write: usize = 0;
 var shift_pressed = false;
 var ctrl_pressed = false;
 var extended = false;
+var user_input_owner: ?u32 = null;
 
 pub fn handleInterrupt() void {
     const scancode = cpu.inb(KB_DATA_PORT);
@@ -122,6 +123,22 @@ pub fn readEvent() ?KeyEvent {
     const event = key_buffer[buf_read];
     buf_read = (buf_read + 1) % BUFFER_SIZE;
     return event;
+}
+
+pub fn beginUserInput(pid: u32) void {
+    user_input_owner = pid;
+}
+
+pub fn endUserInput(pid: u32) void {
+    if (user_input_owner == pid) user_input_owner = null;
+}
+
+pub fn userInputOwner() ?u32 {
+    return user_input_owner;
+}
+
+pub fn shellCanRead() bool {
+    return user_input_owner == null;
 }
 
 fn pushEvent(event: KeyEvent) void {

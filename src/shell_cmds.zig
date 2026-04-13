@@ -8,6 +8,7 @@ const elf = @import("elf.zig");
 const eth = @import("eth.zig");
 const icmp = @import("icmp.zig");
 const ipv4 = @import("ipv4.zig");
+const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const net = @import("net.zig");
 const pci = @import("pci.zig");
@@ -1208,6 +1209,16 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "read")) {
+        const pid = process.spawnFlat("read_user", user_programs.read_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn read", .{});
+            return;
+        };
+        keyboard.beginUserInput(pid);
+        log.kprintln("runuser: spawned read pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1227,7 +1238,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|read|bad_cli|bad_read]", .{});
 }
 
 fn cmdRunelf(args: []const u8) void {

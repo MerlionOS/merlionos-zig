@@ -218,9 +218,10 @@ fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 1. If fd != 0 → return EBADF
 2. Validate user buffer (same as sysWrite)
-3. Read at most count bytes from the keyboard buffer
-4. Copy to user memory
-5. return actual number of bytes read (may be 0, meaning no input available)
+3. If a foreground stdin owner exists, only that user process may consume the keyboard buffer
+4. Read at most count bytes from the keyboard buffer
+5. Copy to user memory
+6. return actual number of bytes read (may be 0, meaning no input available)
 ```
 
 ```zig
@@ -1115,6 +1116,7 @@ Options: runuser hello     — run hello_user
          runuser pair      — run tick/tock user processes together
          runuser sleep     — verify SYS_SLEEP + blocked wake-up
          runuser brk       — verify SYS_BRK + heap mapping
+         runuser read      — verify SYS_READ + foreground keyboard stdin
          runuser bad_cli   — verify Ring 3 privileged-instruction protection
          runuser bad_read  — verify Ring 3 kernel-address protection
 
@@ -1309,7 +1311,7 @@ Phase 8e: Process Lifecycle
 - [x] syscall.zig additions: SYS_YIELD
 - [x] syscall.zig additions: SYS_SLEEP
 - [x] syscall.zig additions: SYS_BRK
-- [ ] syscall.zig additions: SYS_READ
+- [x] syscall.zig additions: SYS_READ
 - [x] scheduler.zig: blocked task wake-up
 - [x] Verify: loop_user + preemption + killuser
 - [x] Verify: sleep_user blocks through SYS_SLEEP, wakes on tick, continues, and exits
@@ -1321,7 +1323,8 @@ Phase 8f: Shell Integration
 - [x] user_programs.zig: loop_user
 - [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: brk_user
+- [x] user_programs.zig: read_user
 - [x] user_programs.zig: bad_cli / bad_read
-- [ ] Verify: full Phase 10 regression after SYS_READ lands
+- [x] Verify: full Phase 10 regression after SYS_READ lands
 - [x] main.zig: add process.init()
 ```

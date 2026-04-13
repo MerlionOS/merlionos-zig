@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const keyboard = @import("keyboard.zig");
 const log = @import("log.zig");
 const process = @import("process.zig");
 const scheduler = @import("scheduler.zig");
@@ -33,6 +34,7 @@ const USER_ADDR_MAX: u64 = 0x0000_7FFF_FFFF_FFFF;
 const PAGE_MASK: u64 = 0xFFF;
 const PAGE_SIZE: u64 = 4096;
 const MAX_WRITE_BYTES: usize = 4096;
+const MAX_READ_BYTES: usize = 4096;
 
 pub const SyscallContext = struct {
     number: u64,
@@ -114,11 +116,12 @@ fn dispatch(ctx: SyscallContext) u64 {
     return switch (syscall_number) {
         .EXIT => sysExit(ctx.arg1),
         .WRITE => sysWrite(ctx.arg1, ctx.arg2, ctx.arg3),
+        .READ => sysRead(ctx.arg1, ctx.arg2, ctx.arg3),
         .YIELD => sysYield(),
         .GETPID => sysGetpid(),
         .SLEEP => sysSleep(ctx.arg1),
         .BRK => sysBrk(ctx.arg1),
-        .READ, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
+        .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
     };
 }
 
@@ -138,6 +141,48 @@ fn sysWrite(fd: u64, buf_ptr: u64, count: u64) u64 {
 
     log.writeBytes(buffer[0..len]);
     return capped_count;
+}
+
+fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64 {
+    if (fd != 0) return err(EBADF);
+    if (count == 0) return 0;
+    if (keyboard.userInputOwner()) |owner| {
+        if (task.currentPid() != owner) return 0;
+    }
+
+    const capped_count = if (count > MAX_READ_BYTES) MAX_READ_BYTES else count;
+    const len: usize = @intCast(capped_count);
+    if (!validateUserBuffer(buf_ptr, len)) return err(EFAULT);
+
+    var buffer: [MAX_READ_BYTES]u8 = undefined;
+    var out_len: usize = 0;
+    while (out_len < len) {
+        const event = keyboard.readEvent() orelse break;
+        switch (event) {
+            .char => |c| {
+                buffer[out_len] = c;
+                out_len += 1;
+            },
+            .enter => {
+                buffer[out_len] = '\n';
+                out_len += 1;
+                break;
+            },
+            .backspace => {
+                buffer[out_len] = 0x08;
+                out_len += 1;
+            },
+            .tab => {
+                buffer[out_len] = '\t';
+                out_len += 1;
+            },
+            else => {},
+        }
+    }
+
+    if (out_len == 0) return 0;
+    if (!copyToUser(buf_ptr, buffer[0..out_len])) return err(EFAULT);
+    return out_len;
 }
 
 fn sysGetpid() u64 {
@@ -183,6 +228,13 @@ fn copyFromUser(dest: []u8, user_src: u64) bool {
     if (!validateUserBuffer(user_src, dest.len)) return false;
     const src: [*]const u8 = @ptrFromInt(user_src);
     @memcpy(dest, src[0..dest.len]);
+    return true;
+}
+
+fn copyToUser(user_dst: u64, src: []const u8) bool {
+    if (!validateUserBuffer(user_dst, src.len)) return false;
+    const dst: [*]u8 = @ptrFromInt(user_dst);
+    @memcpy(dst[0..src.len], src);
     return true;
 }
 

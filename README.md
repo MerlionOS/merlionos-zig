@@ -137,8 +137,8 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] ELF-backed user process execution from VFS with `/bin/hello.elf` and `runelf`
 - [x] Process lifecycle syscall: `SYS_SLEEP` with blocked-task wakeups
 - [x] Process lifecycle syscall: `SYS_BRK` with heap page mapping
-- [ ] Process lifecycle syscall: `SYS_READ`
-- [ ] Full Phase 10 user-mode regression after `SYS_READ`
+- [x] Process lifecycle syscall: `SYS_READ` with foreground keyboard stdin
+- [x] Full Phase 10 user-mode regression after `SYS_READ`
 - [x] Shell integration: `killuser`
 - [x] Protection tests: `bad_cli` and `bad_read`
 - [x] Multi-user-process preemption with `runuser pair`

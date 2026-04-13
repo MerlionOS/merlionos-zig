@@ -218,9 +218,10 @@ fn sysRead(fd: u64, buf_ptr: u64, count: u64) u64;
 ```
 1. 如果 fd != 0 → return EBADF
 2. 验证用户缓冲区（同 sysWrite）
-3. 从 keyboard 缓冲区读取最多 count 字节
-4. 复制到用户内存
-5. return 实际读取的字节数（可能为 0，表示暂无输入）
+3. 如果存在前台 stdin owner，则只有该用户进程可以消费 keyboard 缓冲区
+4. 从 keyboard 缓冲区读取最多 count 字节
+5. 复制到用户内存
+6. return 实际读取的字节数（可能为 0，表示暂无输入）
 ```
 
 ```zig
@@ -1116,6 +1117,7 @@ pub const bad_read = [_]u8{
       runuser pair      — 同时运行 tick/tock 两个用户进程
       runuser sleep     — 验证 SYS_SLEEP + blocked 唤醒
       runuser brk       — 验证 SYS_BRK + heap 映射
+      runuser read      — 验证 SYS_READ + 前台 keyboard stdin
       runuser bad_cli   — 验证 Ring 3 特权指令保护
       runuser bad_read  — 验证 Ring 3 访问内核地址保护
 
@@ -1310,7 +1312,7 @@ Phase 8e: 进程生命周期
 - [x] syscall.zig 补充: SYS_YIELD
 - [x] syscall.zig 补充: SYS_SLEEP
 - [x] syscall.zig 补充: SYS_BRK
-- [ ] syscall.zig 补充: SYS_READ
+- [x] syscall.zig 补充: SYS_READ
 - [x] scheduler.zig: blocked 任务唤醒
 - [x] 验证: loop_user + 抢占 + killuser
 - [x] 验证: sleep_user 通过 SYS_SLEEP 阻塞，tick 唤醒后继续执行并退出
@@ -1322,7 +1324,8 @@ Phase 8f: Shell 集成
 - [x] user_programs.zig: loop_user
 - [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: brk_user
+- [x] user_programs.zig: read_user
 - [x] user_programs.zig: bad_cli / bad_read
-- [ ] 验证: SYS_READ 完成后的完整 Phase 10 回归测试
+- [x] 验证: SYS_READ 完成后的完整 Phase 10 回归测试
 - [x] main.zig: 添加 process.init()
 ```
