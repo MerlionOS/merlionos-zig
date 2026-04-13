@@ -69,7 +69,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Interactive shell with line editing and history
 - [x] Cursor-aware editing: insert, backspace, delete, left/right, home/end
 - [x] Commands: help, clear, echo, info, mem, uptime, version
-- [ ] Manual GUI verification for extended keys in QEMU
+- [x] QEMU monitor verification for extended keys (`left`, `home`, `end`, `delete`, `up`, `down`)
 
 ### Phase 5: Multitasking
 - [x] Task management with context switching
