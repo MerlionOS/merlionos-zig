@@ -1199,6 +1199,15 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "brk")) {
+        const pid = process.spawnFlat("brk_user", user_programs.brk_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn brk", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned brk pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1218,7 +1227,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|pair|sleep|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|bad_cli|bad_read]", .{});
 }
 
 fn cmdRunelf(args: []const u8) void {

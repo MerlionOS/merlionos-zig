@@ -117,7 +117,8 @@ fn dispatch(ctx: SyscallContext) u64 {
         .YIELD => sysYield(),
         .GETPID => sysGetpid(),
         .SLEEP => sysSleep(ctx.arg1),
-        .READ, .BRK, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
+        .BRK => sysBrk(ctx.arg1),
+        .READ, .OPEN, .CLOSE, .STAT, .MMAP => err(ENOSYS),
     };
 }
 
@@ -151,6 +152,14 @@ fn sysYield() u64 {
 fn sysSleep(ticks: u64) u64 {
     if (!scheduler.sleepCurrent(ticks)) return err(EINVAL);
     return 0;
+}
+
+fn sysBrk(new_brk: u64) u64 {
+    return switch (process.brkCurrent(new_brk)) {
+        .ok => |brk| brk,
+        .not_user, .invalid => err(EINVAL),
+        .no_memory => err(ENOMEM),
+    };
 }
 
 fn validateUserBuffer(ptr: u64, len: usize) bool {

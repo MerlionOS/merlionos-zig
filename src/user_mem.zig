@@ -42,6 +42,12 @@ pub const SelfTestResult = enum {
     restore_failed,
 };
 
+pub const BrkResult = enum {
+    ok,
+    invalid,
+    no_memory,
+};
+
 var kernel_cr3: u64 = 0;
 
 pub fn init() void {
@@ -99,6 +105,7 @@ pub fn mapUserPagePhys(as: *AddressSpace, virt: u64, phys: u64, writable: bool) 
     const page = alignDown(virt);
     if (!validUserPage(page) or (phys & PAGE_MASK) != 0) return false;
     if (as.page_count >= MAX_USER_PAGES or hasMapping(as, page)) return false;
+    const record = freePageRecord(as) orelse return false;
 
     const saved_cr3 = cpu.readCr3() & PAGE_FRAME_MASK;
     cpu.writeCr3(as.pml4_phys);
@@ -106,7 +113,7 @@ pub fn mapUserPagePhys(as: *AddressSpace, virt: u64, phys: u64, writable: bool) 
     cpu.writeCr3(saved_cr3);
     if (!mapped) return false;
 
-    as.pages[as.page_count] = .{
+    record.* = .{
         .virt = page,
         .phys = phys,
         .active = true,
@@ -142,15 +149,65 @@ pub fn destroy(as: *AddressSpace) void {
 }
 
 pub fn expandBrk(as: *AddressSpace, new_brk: u64) bool {
-    if (new_brk < as.brk or new_brk > USER_MMAP_BASE) return false;
+    return setBrk(as, new_brk) == .ok;
+}
+
+pub fn setBrk(as: *AddressSpace, new_brk: u64) BrkResult {
+    if (new_brk < USER_HEAP_BASE or new_brk > USER_MMAP_BASE) return .invalid;
+    if (new_brk == as.brk) return .ok;
+    if (new_brk < as.brk) {
+        shrinkBrk(as, new_brk);
+        return .ok;
+    }
+
+    return growBrk(as, new_brk);
+}
+
+fn growBrk(as: *AddressSpace, new_brk: u64) BrkResult {
+    const old_brk = as.brk;
 
     var page = alignUp(as.brk);
     const end = alignUp(new_brk);
     while (page < end) : (page += PAGE_SIZE) {
-        if (!mapUserPage(as, page, true)) return false;
+        if (!mapUserPage(as, page, true)) {
+            rollbackGrow(as, old_brk, page);
+            return .no_memory;
+        }
     }
     as.brk = new_brk;
-    return true;
+    return .ok;
+}
+
+fn shrinkBrk(as: *AddressSpace, new_brk: u64) void {
+    var page = alignUp(new_brk);
+    const end = alignUp(as.brk);
+    while (page < end) : (page += PAGE_SIZE) {
+        unmapUserPage(as, page);
+    }
+    as.brk = new_brk;
+}
+
+fn rollbackGrow(as: *AddressSpace, old_brk: u64, failed_page: u64) void {
+    var page = alignUp(old_brk);
+    while (page < failed_page) : (page += PAGE_SIZE) {
+        unmapUserPage(as, page);
+    }
+}
+
+fn unmapUserPage(as: *AddressSpace, virt: u64) void {
+    const page = alignDown(virt);
+    const saved_cr3 = cpu.readCr3() & PAGE_FRAME_MASK;
+    cpu.writeCr3(as.pml4_phys);
+    const phys = vmm.unmapPage(page);
+    cpu.writeCr3(saved_cr3);
+    if (phys) |frame| {
+        pmm.freeFrame(frame);
+    }
+
+    if (pageRecord(as, page)) |record| {
+        record.* = emptyPageRecord();
+        if (as.page_count > 0) as.page_count -= 1;
+    }
 }
 
 pub fn selfTest() SelfTestResult {
@@ -182,6 +239,20 @@ fn hasMapping(as: *const AddressSpace, virt: u64) bool {
         if (record.active and record.virt == virt) return true;
     }
     return false;
+}
+
+fn freePageRecord(as: *AddressSpace) ?*PageRecord {
+    for (&as.pages) |*record| {
+        if (!record.active) return record;
+    }
+    return null;
+}
+
+fn pageRecord(as: *AddressSpace, virt: u64) ?*PageRecord {
+    for (&as.pages) |*record| {
+        if (record.active and record.virt == virt) return record;
+    }
+    return null;
 }
 
 fn freeUserPageTables(pml4_phys: u64) void {

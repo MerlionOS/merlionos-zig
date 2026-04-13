@@ -32,6 +32,13 @@ pub const KillUserResult = enum {
     busy_current,
 };
 
+pub const BrkResult = union(enum) {
+    ok: u64,
+    not_user,
+    invalid,
+    no_memory,
+};
+
 var process_table: [MAX_PROCESSES]ProcessInfo = [_]ProcessInfo{emptyProcessInfo()} ** MAX_PROCESSES;
 var address_spaces: [MAX_PROCESSES]user_mem.AddressSpace = undefined;
 var address_space_used: [MAX_PROCESSES]bool = [_]bool{false} ** MAX_PROCESSES;
@@ -228,6 +235,20 @@ pub fn killUser(pid: u32) KillUserResult {
 
 pub fn getProcessInfo(pid: u32) ?*const ProcessInfo {
     return getProcessInfoMutable(pid);
+}
+
+pub fn brkCurrent(new_brk: u64) BrkResult {
+    const current = task.currentTask() orelse return .not_user;
+    const info = getProcessInfoMutable(current.pid) orelse return .not_user;
+    const slot = info.address_space_slot orelse return .not_user;
+    const addr_space = &address_spaces[slot];
+
+    if (new_brk == 0) return .{ .ok = addr_space.brk };
+    return switch (user_mem.setBrk(addr_space, new_brk)) {
+        .ok => .{ .ok = addr_space.brk },
+        .invalid => .invalid,
+        .no_memory => .no_memory,
+    };
 }
 
 pub fn onContextSwitch(new_task_index: usize) void {
