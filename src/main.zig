@@ -27,6 +27,7 @@ const scheduler = @import("scheduler.zig");
 const vfs = @import("vfs.zig");
 const procfs = @import("procfs.zig");
 const devfs = @import("devfs.zig");
+const initfs = @import("initfs.zig");
 const shell = @import("shell.zig");
 const syscall = @import("syscall.zig");
 const user_mem = @import("user_mem.zig");
@@ -170,7 +171,8 @@ export fn _start() callconv(.c) noreturn {
     vfs.init();
     procfs.init();
     devfs.init();
-    log.kprintln("[fs] VFS initialized: /tmp /dev /proc /etc", .{});
+    initfs.init();
+    log.kprintln("[fs] VFS initialized: /tmp /dev /proc /etc /bin", .{});
 
     task.init();
     scheduler.init();

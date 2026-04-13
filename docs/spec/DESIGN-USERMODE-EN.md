@@ -1098,6 +1098,7 @@ pub const bad_read = [_]u8{
 ```zig
 // Add to the commands array in shell_cmds.zig
 .{ .name = "runuser", .description = "Run a built-in user-mode test program", .handler = cmdRunuser },
+.{ .name = "runelf", .description = "Run a user-mode ELF from the VFS", .handler = cmdRunelf },
 .{ .name = "ps", .description = "Show process list with type info", .handler = cmdPs },
 .{ .name = "killuser", .description = "Kill a user process by PID", .handler = cmdKilluser },
 .{ .name = "syscallstat", .description = "Show syscall statistics", .handler = cmdSyscallstat },
@@ -1109,12 +1110,22 @@ pub const bad_read = [_]u8{
 Usage: runuser <program>
 Options: runuser hello     — run hello_user
          runuser loop      — run loop_user
-         runuser <addr>    — run ELF (future)
+         runelf <path>     — load and run an ELF from the VFS
 
 1. Select the embedded program based on the argument
 2. process.spawnFlat(name, program_bytes, USER_TEXT_BASE, USER_TEXT_BASE)
 3. Display: "Spawned user process 'hello' (pid N)"
 4. Polling-style loop to wait (or return immediately and let the scheduler run the user process in the background)
+```
+
+#### cmdRunelf
+
+```
+Usage: runelf <path>
+
+1. Read an ELF file from the VFS (for example /bin/hello.elf)
+2. process.spawnElf(name, file_bytes)
+3. The ELF loader maps LOAD segments and starts the user process at the entry point
 ```
 
 #### cmdPs (enhanced existing ps command)
@@ -1213,7 +1224,7 @@ src/idt.zig          # syscallStub changed to full syscall dispatch
 src/task.zig         # Task gets is_user and wake_tick fields
 src/scheduler.zig    # switchFromContext calls process.onContextSwitch
                      # timerTick checks blocked task wake-up
-src/shell_cmds.zig   # New commands: runuser, ps, killuser, syscallstat
+src/shell_cmds.zig   # New commands: runuser, runelf, ps, killuser, syscallstat
 src/main.zig         # Add process.init() call
 ```
 
@@ -1286,7 +1297,7 @@ Phase 8c: User Processes
 Phase 8d: ELF Loader
 - [x] src/elf.zig — parse / load helper
 - [x] Verify: `elftest` parses an embedded ELF fixture, prints segment information, and loads it into a temporary user address space
-- [ ] Verify: load an ELF from VFS and execute it as a user process
+- [x] Verify: load `/bin/hello.elf` from VFS and execute it as a user process through `runelf`
 
 Phase 8e: Process Lifecycle
 - [x] syscall.zig additions: SYS_YIELD

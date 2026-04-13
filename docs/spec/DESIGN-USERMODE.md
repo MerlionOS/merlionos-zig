@@ -1099,6 +1099,7 @@ pub const bad_read = [_]u8{
 ```zig
 // 添加到 shell_cmds.zig 的 commands 数组
 .{ .name = "runuser", .description = "Run a built-in user-mode test program", .handler = cmdRunuser },
+.{ .name = "runelf", .description = "Run a user-mode ELF from the VFS", .handler = cmdRunelf },
 .{ .name = "ps", .description = "Show process list with type info", .handler = cmdPs },
 .{ .name = "killuser", .description = "Kill a user process by PID", .handler = cmdKilluser },
 .{ .name = "syscallstat", .description = "Show syscall statistics", .handler = cmdSyscallstat },
@@ -1110,12 +1111,22 @@ pub const bad_read = [_]u8{
 用法: runuser <program>
 可选: runuser hello     — 运行 hello_user
       runuser loop      — 运行 loop_user
-      runuser <addr>    — 运行 ELF（未来）
+      runelf <path>     — 从 VFS 加载并运行 ELF
 
 1. 根据参数选择内嵌程序
 2. process.spawnFlat(name, program_bytes, USER_TEXT_BASE, USER_TEXT_BASE)
 3. 显示: "Spawned user process 'hello' (pid N)"
 4. netpoll 式循环等待（或者立即返回，让调度器在后台运行用户进程）
+```
+
+#### cmdRunelf
+
+```
+用法: runelf <path>
+
+1. 从 VFS 读取 ELF 文件（例如 /bin/hello.elf）
+2. process.spawnElf(name, file_bytes)
+3. ELF loader 映射 LOAD 段并从 entry point 启动用户进程
 ```
 
 #### cmdPs（增强现有的 ps 命令）
@@ -1214,7 +1225,7 @@ src/idt.zig          # syscallStub 改为完整的 syscall 分发
 src/task.zig         # Task 增加 is_user, wake_tick 字段
 src/scheduler.zig    # switchFromContext 中调用 process.onContextSwitch
                      # timerTick 中检查 blocked 任务唤醒
-src/shell_cmds.zig   # 新增 runuser, ps, killuser, syscallstat 命令
+src/shell_cmds.zig   # 新增 runuser, runelf, ps, killuser, syscallstat 命令
 src/main.zig         # 新增 process.init() 调用
 ```
 
@@ -1287,7 +1298,7 @@ Phase 8c: 用户进程
 Phase 8d: ELF 加载器
 - [x] src/elf.zig — parse / load helper
 - [x] 验证: `elftest` 解析内嵌 ELF fixture，打印段信息，并加载到临时用户地址空间
-- [ ] 验证: 从 VFS 加载 ELF 并作为用户进程执行
+- [x] 验证: 从 VFS 加载 `/bin/hello.elf` 并通过 `runelf` 作为用户进程执行
 
 Phase 8e: 进程生命周期
 - [x] syscall.zig 补充: SYS_YIELD

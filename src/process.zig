@@ -1,4 +1,5 @@
 const cpu = @import("cpu.zig");
+const elf = @import("elf.zig");
 const gdt = @import("gdt.zig");
 const log = @import("log.zig");
 const pmm = @import("pmm.zig");
@@ -92,6 +93,60 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
         .address_space_slot = proc_slot,
         .kernel_stack_top = user_task.stack_top,
         .entry_point = entry,
+        .exit_code = 0,
+        .active = true,
+    };
+
+    return spawned.pid;
+}
+
+pub fn spawnElf(name: []const u8, data: []const u8) ?u32 {
+    var parse_result: elf.ParseResult = undefined;
+    const parse_status = elf.parse(data, &parse_result);
+    if (parse_status != .ok) {
+        log.kprintln("[proc] spawnElf: parse failed: {s}", .{@tagName(parse_status)});
+        return null;
+    }
+    if (!entryWithinLoadSegment(&parse_result)) {
+        log.kprintln("[proc] spawnElf: entry point is not covered by a LOAD segment", .{});
+        return null;
+    }
+
+    const proc_slot = findFreeSlot() orelse {
+        log.kprintln("[proc] spawnElf: no process slot", .{});
+        return null;
+    };
+    const addr_space = &address_spaces[proc_slot];
+    if (!user_mem.createInto(addr_space)) {
+        log.kprintln("[proc] spawnElf: address space create failed", .{});
+        return null;
+    }
+    address_space_used[proc_slot] = true;
+
+    if (!elf.load(data, &parse_result, addr_space)) {
+        log.kprintln("[proc] spawnElf: load failed", .{});
+        releaseAddressSpace(proc_slot);
+        return null;
+    }
+
+    const spawned = task.spawnUserWithIndex(name, parse_result.entry_point, user_mem.USER_STACK_TOP - 8) orelse {
+        log.kprintln("[proc] spawnElf: task spawn failed", .{});
+        releaseAddressSpace(proc_slot);
+        return null;
+    };
+    const user_task = task.getTask(spawned.index) orelse {
+        log.kprintln("[proc] spawnElf: task index {d} missing after spawn", .{spawned.index});
+        _ = task.kill(spawned.pid);
+        releaseAddressSpace(proc_slot);
+        return null;
+    };
+
+    process_table[proc_slot] = .{
+        .pid = spawned.pid,
+        .proc_type = .user,
+        .address_space_slot = proc_slot,
+        .kernel_stack_top = user_task.stack_top,
+        .entry_point = parse_result.entry_point,
         .exit_code = 0,
         .active = true,
     };
@@ -226,6 +281,17 @@ fn releaseAddressSpace(slot: usize) void {
     if (!address_space_used[slot]) return;
     user_mem.destroy(&address_spaces[slot]);
     address_space_used[slot] = false;
+}
+
+fn entryWithinLoadSegment(parse_result: *const elf.ParseResult) bool {
+    var index: usize = 0;
+    while (index < parse_result.segment_count) : (index += 1) {
+        const segment = parse_result.segments[index];
+        if (segment.mem_size == 0) continue;
+        const end = segment.vaddr + segment.mem_size;
+        if (parse_result.entry_point >= segment.vaddr and parse_result.entry_point < end) return true;
+    }
+    return false;
 }
 
 fn copyToActiveAddressSpace(dest_vaddr: u64, src: []const u8) void {

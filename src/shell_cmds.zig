@@ -62,6 +62,7 @@ const commands = [_]Command{
     .{ .name = "pwd", .description = "Print the current directory", .handler = cmdPwd },
     .{ .name = "ps", .description = "List tasks", .handler = cmdPs },
     .{ .name = "rm", .description = "Remove a file or empty directory", .handler = cmdRm },
+    .{ .name = "runelf", .description = "Run a user-mode ELF from the VFS", .handler = cmdRunelf },
     .{ .name = "runuser", .description = "Run a built-in user-mode program", .handler = cmdRunuser },
     .{ .name = "spawn", .description = "Spawn a cooperative worker task", .handler = cmdSpawn },
     .{ .name = "syscallstat", .description = "Show syscall statistics", .handler = cmdSyscallstat },
@@ -1210,6 +1211,38 @@ fn cmdRunuser(args: []const u8) void {
     log.kprintln("Usage: runuser [hello|loop|pair|bad_cli|bad_read]", .{});
 }
 
+fn cmdRunelf(args: []const u8) void {
+    var path_buf: [MAX_PATH]u8 = undefined;
+    const path = normalizePath(args, false, &path_buf) orelse {
+        log.kprintln("Usage: runelf <path>", .{});
+        return;
+    };
+
+    const idx = vfs.resolve(path) orelse {
+        log.kprintln("runelf: not found: {s}", .{path});
+        return;
+    };
+    const inode = vfs.getInode(idx) orelse {
+        log.kprintln("runelf: not found: {s}", .{path});
+        return;
+    };
+    if (inode.node_type != .regular_file) {
+        log.kprintln("runelf: not a regular file: {s}", .{path});
+        return;
+    }
+    const data = vfs.readFile(idx) orelse {
+        log.kprintln("runelf: unreadable: {s}", .{path});
+        return;
+    };
+
+    const pid = process.spawnElf(pathBaseName(path), data) orelse {
+        log.kprintln("runelf: failed to spawn {s}", .{path});
+        return;
+    };
+    log.kprintln("runelf: spawned {s} pid={d}", .{ path, pid });
+    _ = scheduler.yield();
+}
+
 fn cmdTouch(args: []const u8) void {
     var path_buf: [MAX_PATH]u8 = undefined;
     const path = normalizePath(args, false, &path_buf) orelse {
@@ -1843,4 +1876,14 @@ fn parentPathLen(path: []const u8) usize {
     while (idx > 1 and path[idx - 1] != '/') : (idx -= 1) {}
     if (idx <= 1) return 1;
     return idx - 1;
+}
+
+fn pathBaseName(path: []const u8) []const u8 {
+    if (path.len == 0) return path;
+
+    var start = path.len;
+    while (start > 0) : (start -= 1) {
+        if (path[start - 1] == '/') break;
+    }
+    return path[start..];
 }
