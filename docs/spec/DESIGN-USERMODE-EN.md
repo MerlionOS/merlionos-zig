@@ -1014,9 +1014,11 @@ When the scheduler selects this task, `switchFromContext` returns this RSP. The 
 
 ## 7. Phase 8f: Shell Integration
 
-### 7.1 Embedded Test Programs
+### 7.1 User-Mode Test Programs
 
-In the MVP phase, we don't load ELF files from disk. Instead, we embed a few simple user-mode test programs (written in assembly, as byte arrays) directly in the kernel.
+Current user-mode testing covers two paths:
+- Simple built-in flat binary test programs embedded in the kernel as hand-written machine-code byte arrays
+- `/bin/hello.elf` in the VFS, executed through `runelf`, covering ELF parsing, segment loading, and user-process startup
 
 #### Test Program 1: hello_user
 
@@ -1110,7 +1112,11 @@ pub const bad_read = [_]u8{
 Usage: runuser <program>
 Options: runuser hello     — run hello_user
          runuser loop      — run loop_user
-         runelf <path>     — load and run an ELF from the VFS
+         runuser pair      — run tick/tock user processes together
+         runuser sleep     — verify SYS_SLEEP + blocked wake-up
+         runuser brk       — verify SYS_BRK + heap mapping
+         runuser bad_cli   — verify Ring 3 privileged-instruction protection
+         runuser bad_read  — verify Ring 3 kernel-address protection
 
 1. Select the embedded program based on the argument
 2. process.spawnFlat(name, program_bytes, USER_TEXT_BASE, USER_TEXT_BASE)
@@ -1316,6 +1322,6 @@ Phase 8f: Shell Integration
 - [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: brk_user
 - [x] user_programs.zig: bad_cli / bad_read
-- [ ] Verify: all test cases
+- [ ] Verify: full Phase 10 regression after SYS_READ lands
 - [x] main.zig: add process.init()
 ```

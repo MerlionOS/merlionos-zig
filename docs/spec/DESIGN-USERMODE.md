@@ -1015,9 +1015,11 @@ fn buildUserInitialStack(kernel_stack_top: u64, entry: u64, user_stack_top: u64)
 
 ## 7. Phase 8f: Shell 集成
 
-### 7.1 内嵌测试程序
+### 7.1 用户态测试程序
 
-MVP 阶段不从磁盘加载 ELF，而是在内核中内嵌几个简单的用户态测试程序（汇编编写，作为字节数组）。
+当前用户态测试覆盖两条路径：
+- 内核中内嵌的简单 flat binary 测试程序（汇编编写，作为字节数组）
+- VFS 中的 `/bin/hello.elf`，通过 `runelf` 走 ELF 解析、段加载和用户进程启动路径
 
 #### 测试程序 1: hello_user
 
@@ -1111,7 +1113,11 @@ pub const bad_read = [_]u8{
 用法: runuser <program>
 可选: runuser hello     — 运行 hello_user
       runuser loop      — 运行 loop_user
-      runelf <path>     — 从 VFS 加载并运行 ELF
+      runuser pair      — 同时运行 tick/tock 两个用户进程
+      runuser sleep     — 验证 SYS_SLEEP + blocked 唤醒
+      runuser brk       — 验证 SYS_BRK + heap 映射
+      runuser bad_cli   — 验证 Ring 3 特权指令保护
+      runuser bad_read  — 验证 Ring 3 访问内核地址保护
 
 1. 根据参数选择内嵌程序
 2. process.spawnFlat(name, program_bytes, USER_TEXT_BASE, USER_TEXT_BASE)
@@ -1317,6 +1323,6 @@ Phase 8f: Shell 集成
 - [x] user_programs.zig: sleep_user
 - [x] user_programs.zig: brk_user
 - [x] user_programs.zig: bad_cli / bad_read
-- [ ] 验证: 所有测试用例
+- [ ] 验证: SYS_READ 完成后的完整 Phase 10 回归测试
 - [x] main.zig: 添加 process.init()
 ```
