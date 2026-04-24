@@ -41,6 +41,7 @@ const commands = [_]Command{
     .{ .name = "cat", .description = "Print a file from the virtual filesystem", .handler = cmdCat },
     .{ .name = "cd", .description = "Change the current directory", .handler = cmdCd },
     .{ .name = "clear", .description = "Clear the screen", .handler = cmdClear },
+    .{ .name = "clonememtest", .description = "Verify user address-space cloning", .handler = cmdClonememtest },
     .{ .name = "dns", .description = "Resolve a domain name to IPv4", .handler = cmdDns },
     .{ .name = "echo", .description = "Print text or write with > redirection", .handler = cmdEcho },
     .{ .name = "elftest", .description = "Parse a built-in ELF fixture", .handler = cmdElftest },
@@ -1314,6 +1315,14 @@ fn cmdUsermemtest(_: []const u8) void {
     log.kprintln("usermemtest: {s}", .{@tagName(result)});
     if (result == .ok) {
         log.kprintln("  created address space, mapped text+stack pages, switched CR3, restored kernel CR3", .{});
+    }
+}
+
+fn cmdClonememtest(_: []const u8) void {
+    const result = user_mem.cloneSelfTest();
+    log.kprintln("clonememtest: {s}", .{@tagName(result)});
+    if (result == .ok) {
+        log.kprintln("  cloned user pages with copied content, distinct frames, and preserved brk/mmap metadata", .{});
     }
 }
 
