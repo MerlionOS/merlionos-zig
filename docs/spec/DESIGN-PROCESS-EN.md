@@ -543,11 +543,11 @@ When each sub-phase (12a–12f) lands, the PR attaches:
 
 ```
 Phase 12a: Address-space cloning
-- [ ] user_mem.zig: createBlank (variant without the user stack)
-- [ ] user_mem.zig: cloneAddressSpace
-- [ ] user_mem.zig: cloneSelfTest
-- [ ] shell_cmds.zig: clonememtest command
-- [ ] Verify: clonememtest ok, and the two address spaces at the same virtual address are physically isolated
+- [x] user_mem.zig: createBlank (variant without the user stack)
+- [x] user_mem.zig: cloneAddressSpace
+- [x] user_mem.zig: cloneSelfTest
+- [x] shell_cmds.zig: clonememtest command
+- [x] Verify: clonememtest ok, and the two address spaces at the same virtual address are physically isolated
 
 Phase 12b: SYS_FORK
 - [ ] syscall.zig: SYS.FORK=11, MAX_SYSCALL updated
