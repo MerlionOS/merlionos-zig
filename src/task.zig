@@ -5,6 +5,8 @@ const MAX_NAME = 32;
 const STACK_SIZE = 16384;
 const STACK_CANARY: u64 = 0xDEAD_BEEF_CAFE_BABE;
 const INITIAL_RFLAGS: u64 = 0x202;
+pub const SAVED_CONTEXT_SIZE: u64 = 160;
+const SAVED_CONTEXT_RAX_OFFSET: u64 = 112;
 
 pub const TaskState = enum {
     ready,
@@ -28,6 +30,9 @@ pub const Task = struct {
     priority: u8 = 128,
     is_user: bool = false,
     wake_tick: u64 = 0,
+    parent_pid: u32 = 0,
+    exit_status: i32 = 0,
+    wait_on_pid: u32 = 0,
 };
 
 pub const KillResult = enum {
@@ -121,6 +126,35 @@ pub fn spawnUserWithIndex(name: []const u8, entry_point: u64, user_stack_top: u6
     const canary_ptr: *volatile u64 = @ptrFromInt(new_task.stack_bottom);
     canary_ptr.* = STACK_CANARY;
     new_task.rsp = buildUserInitialStack(new_task.stack_top, entry_point, user_stack_top);
+
+    tasks[index] = new_task;
+    next_pid += 1;
+    return .{ .pid = new_task.pid, .index = index };
+}
+
+pub fn forkUserFromContext(parent: *const Task, saved_context: u64) ?SpawnResult {
+    const index = allocSlot() orelse return null;
+    const stack_slot = allocStack() orelse return null;
+
+    var new_task = Task{
+        .pid = next_pid,
+        .state = .ready,
+        .stack_slot = stack_slot,
+        .is_user = true,
+        .parent_pid = parent.pid,
+    };
+    setName(&new_task, nameSlice(parent));
+
+    new_task.stack_bottom = @intFromPtr(&stack_pool[stack_slot][0]);
+    new_task.stack_top = new_task.stack_bottom + STACK_SIZE;
+    const canary_ptr: *volatile u64 = @ptrFromInt(new_task.stack_bottom);
+    canary_ptr.* = STACK_CANARY;
+
+    new_task.rsp = new_task.stack_top - SAVED_CONTEXT_SIZE;
+    const src: [*]const u8 = @ptrFromInt(saved_context);
+    const dst: [*]u8 = @ptrFromInt(new_task.rsp);
+    @memcpy(dst[0..SAVED_CONTEXT_SIZE], src[0..SAVED_CONTEXT_SIZE]);
+    @as(*u64, @ptrFromInt(new_task.rsp + SAVED_CONTEXT_RAX_OFFSET)).* = 0;
 
     tasks[index] = new_task;
     next_pid += 1;

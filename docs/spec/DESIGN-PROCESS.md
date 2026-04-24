@@ -546,12 +546,12 @@ Phase 12a: 地址空间克隆
 - [x] 验证: clonememtest ok，且两个 AS 的同一虚地址物理隔离
 
 Phase 12b: SYS_FORK
-- [ ] syscall.zig: SYS.FORK=11, MAX_SYSCALL 更新
-- [ ] syscall.zig: current_syscall_frame 捕获逻辑（idt.syscallStub 侧 + Zig 侧）
-- [ ] task.zig: parent_pid, exit_status, wait_on_pid 字段
-- [ ] process.zig: forkCurrent, ForkResult, reserveSlot
-- [ ] syscall.zig: sysFork 连接
-- [ ] 验证: /bin/fork_demo.elf 父子输出、rax=0/child_pid 分流
+- [x] syscall.zig: SYS.FORK=11, MAX_SYSCALL 更新
+- [x] syscall.zig: current_syscall_frame 捕获逻辑（idt.syscallStub 侧 + Zig 侧）
+- [x] task.zig: parent_pid, exit_status, wait_on_pid 字段
+- [x] process.zig: forkCurrent, ForkResult, reserveSlot
+- [x] syscall.zig: sysFork 连接
+- [x] 验证: runuser fork 父子输出、rax=0/child_pid 分流
 
 Phase 12c: SYS_EXEC
 - [ ] process.zig: execCurrent, ExecResult
