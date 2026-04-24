@@ -1398,5 +1398,6 @@ Phase 8g: Userland File ABI
 - [x] syscall.zig: SYS_READ supports opened VFS fds
 - [x] shell_cmds.zig / user_programs.zig: runuser file
 - [x] Verify: runuser file prints /proc/version and exits normally
-- [ ] syscall.zig additions: SYS_MMAP
+- [x] syscall.zig additions: SYS_MMAP
+- [x] shell_cmds.zig / user_programs.zig: runuser mmap
 ```

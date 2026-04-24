@@ -1,6 +1,6 @@
 # MerlionOS-Zig Phase 12+ 路线图
 
-> 本文档规划 Phase 11（用户态文件 ABI，`SYS_MMAP` 收尾中）之后的演进路径。
+> 本文档规划 Phase 11（用户态文件 ABI，含 `SYS_MMAP`）之后的演进路径。
 > 每个 Phase 给出：**动机 / 交付物 / 依赖 / 触碰的文件 / 验收标准**。
 > 详细实现规格另见同目录下 `DESIGN-PROCESS.md`（Phase 12 已展开）。
 > 后续每开工一个 Phase 再补一份对应的 `DESIGN-*.md`，保持 Phase 规格与实现一对一。

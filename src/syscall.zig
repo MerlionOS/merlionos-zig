@@ -127,7 +127,7 @@ fn dispatch(ctx: SyscallContext) u64 {
         .OPEN => sysOpen(ctx.arg1, ctx.arg2),
         .CLOSE => sysClose(ctx.arg1),
         .STAT => sysStat(ctx.arg1, ctx.arg2, ctx.arg3),
-        .MMAP => err(ENOSYS),
+        .MMAP => sysMmap(ctx.arg1, ctx.arg2),
     };
 }
 
@@ -275,6 +275,14 @@ fn sysStat(path_ptr: u64, stat_ptr: u64, stat_len: u64) u64 {
     const stat_bytes = std.mem.asBytes(&stat);
     if (!copyToUser(stat_ptr, stat_bytes)) return err(EFAULT);
     return expected_len;
+}
+
+fn sysMmap(addr: u64, length: u64) u64 {
+    return switch (process.mmapCurrent(addr, length)) {
+        .ok => |mapped_addr| mapped_addr,
+        .not_user, .invalid => err(EINVAL),
+        .no_memory => err(ENOMEM),
+    };
 }
 
 fn validateUserBuffer(ptr: u64, len: usize) bool {

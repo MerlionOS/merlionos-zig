@@ -48,6 +48,12 @@ pub const BrkResult = enum {
     no_memory,
 };
 
+pub const MmapResult = union(enum) {
+    ok: u64,
+    invalid,
+    no_memory,
+};
+
 var kernel_cr3: u64 = 0;
 
 pub fn init() void {
@@ -163,6 +169,38 @@ pub fn setBrk(as: *AddressSpace, new_brk: u64) BrkResult {
     return growBrk(as, new_brk);
 }
 
+pub fn mmap(as: *AddressSpace, addr: u64, length: u64) MmapResult {
+    if (length == 0) return .invalid;
+    const mapped_len = alignUpChecked(length) orelse return .invalid;
+    if (mapped_len == 0) return .invalid;
+
+    const start = if (addr == 0) as.mmap_next else blk: {
+        if ((addr & PAGE_MASK) != 0) return .invalid;
+        break :blk addr;
+    };
+    const end = checkedAdd(start, mapped_len) orelse return .invalid;
+    if (!validUserRange(start, end)) return .invalid;
+    if (rangesOverlap(start, end, USER_TEXT_BASE, USER_HEAP_BASE)) return .invalid;
+    if (rangesOverlap(start, end, USER_HEAP_BASE, as.brk)) return .invalid;
+    if (rangesOverlap(start, end, USER_STACK_TOP - USER_STACK_SIZE, USER_STACK_TOP)) return .invalid;
+
+    var page = start;
+    while (page < end) : (page += PAGE_SIZE) {
+        if (hasMapping(as, page)) return .invalid;
+    }
+
+    page = start;
+    while (page < end) : (page += PAGE_SIZE) {
+        if (!mapUserPage(as, page, true)) {
+            rollbackMmap(as, start, page);
+            return .no_memory;
+        }
+    }
+
+    if (addr == 0) as.mmap_next = end;
+    return .{ .ok = start };
+}
+
 fn growBrk(as: *AddressSpace, new_brk: u64) BrkResult {
     const old_brk = as.brk;
 
@@ -189,6 +227,13 @@ fn shrinkBrk(as: *AddressSpace, new_brk: u64) void {
 
 fn rollbackGrow(as: *AddressSpace, old_brk: u64, failed_page: u64) void {
     var page = alignUp(old_brk);
+    while (page < failed_page) : (page += PAGE_SIZE) {
+        unmapUserPage(as, page);
+    }
+}
+
+fn rollbackMmap(as: *AddressSpace, start: u64, failed_page: u64) void {
+    var page = start;
     while (page < failed_page) : (page += PAGE_SIZE) {
         unmapUserPage(as, page);
     }
@@ -232,6 +277,27 @@ fn validUserPage(virt: u64) bool {
     if ((virt & PAGE_MASK) != 0) return false;
     if (virt == 0 or virt > USER_ADDR_MAX) return false;
     return virt + PAGE_SIZE - 1 <= USER_ADDR_MAX;
+}
+
+fn validUserRange(start: u64, end: u64) bool {
+    if (start == 0 or start >= end) return false;
+    if ((start & PAGE_MASK) != 0 or (end & PAGE_MASK) != 0) return false;
+    return end - 1 <= USER_ADDR_MAX;
+}
+
+fn rangesOverlap(a_start: u64, a_end: u64, b_start: u64, b_end: u64) bool {
+    return a_start < b_end and b_start < a_end;
+}
+
+fn checkedAdd(a: u64, b: u64) ?u64 {
+    const result = a +% b;
+    if (result < a) return null;
+    return result;
+}
+
+fn alignUpChecked(value: u64) ?u64 {
+    const added = checkedAdd(value, PAGE_MASK) orelse return null;
+    return added & ~PAGE_MASK;
 }
 
 fn hasMapping(as: *const AddressSpace, virt: u64) bool {
