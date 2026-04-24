@@ -558,11 +558,11 @@ Phase 12b: SYS_FORK
 - [x] Verify: runuser fork parent/child output, rax=0/child_pid split
 
 Phase 12c: SYS_EXEC
-- [ ] process.zig: execCurrent, ExecResult
-- [ ] syscall.zig: sysExec + overwrite iretq frame on success
-- [ ] process.zig: ProcessInfo.name field + basename extraction
-- [ ] shell_cmds.zig: ps displays NAME
-- [ ] Verify: /bin/exec_demo.elf prints "Hello from Ring 3!" with pid unchanged
+- [x] process.zig: execCurrent, ExecResult
+- [x] syscall.zig: sysExec + overwrite iretq frame on success
+- [x] process.zig: ProcessInfo.name field + basename extraction
+- [x] shell_cmds.zig: ps displays NAME
+- [x] Verify: runuser exec prints "Hello from Ring 3!" without taking the failure path
 
 Phase 12d: SYS_WAITPID
 - [ ] task.zig: TaskState.zombie

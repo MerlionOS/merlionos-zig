@@ -7,6 +7,11 @@ const STACK_CANARY: u64 = 0xDEAD_BEEF_CAFE_BABE;
 const INITIAL_RFLAGS: u64 = 0x202;
 pub const SAVED_CONTEXT_SIZE: u64 = 160;
 const SAVED_CONTEXT_RAX_OFFSET: u64 = 112;
+const SAVED_CONTEXT_RIP_OFFSET: u64 = 120;
+const SAVED_CONTEXT_CS_OFFSET: u64 = 128;
+const SAVED_CONTEXT_RFLAGS_OFFSET: u64 = 136;
+const SAVED_CONTEXT_RSP_OFFSET: u64 = 144;
+const SAVED_CONTEXT_SS_OFFSET: u64 = 152;
 
 pub const TaskState = enum {
     ready,
@@ -159,6 +164,16 @@ pub fn forkUserFromContext(parent: *const Task, saved_context: u64) ?SpawnResult
     tasks[index] = new_task;
     next_pid += 1;
     return .{ .pid = new_task.pid, .index = index };
+}
+
+pub fn rewriteUserContext(saved_context: u64, entry_point: u64, user_stack_top: u64) void {
+    const frame: [*]u8 = @ptrFromInt(saved_context);
+    @memset(frame[0..SAVED_CONTEXT_SIZE], 0);
+    writeContextSlot(saved_context, SAVED_CONTEXT_RIP_OFFSET, entry_point);
+    writeContextSlot(saved_context, SAVED_CONTEXT_CS_OFFSET, gdt.USER_CODE_SEL | 3);
+    writeContextSlot(saved_context, SAVED_CONTEXT_RFLAGS_OFFSET, INITIAL_RFLAGS);
+    writeContextSlot(saved_context, SAVED_CONTEXT_RSP_OFFSET, user_stack_top);
+    writeContextSlot(saved_context, SAVED_CONTEXT_SS_OFFSET, gdt.USER_DATA_SEL | 3);
 }
 
 pub fn kill(pid: u32) KillResult {
@@ -382,4 +397,8 @@ fn buildUserInitialStack(stack_top: u64, entry_point: u64, user_stack_top: u64) 
 fn pushStack(sp: *u64, value: u64) void {
     sp.* -= 8;
     @as(*u64, @ptrFromInt(sp.*)).* = value;
+}
+
+fn writeContextSlot(saved_context: u64, offset: u64, value: u64) void {
+    @as(*u64, @ptrFromInt(saved_context + offset)).* = value;
 }

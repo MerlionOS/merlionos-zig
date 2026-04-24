@@ -1247,6 +1247,15 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "exec")) {
+        const pid = process.spawnFlat("exec_user", user_programs.exec_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn exec", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned exec pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1266,7 +1275,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|read|file|mmap|fork|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|read|file|mmap|fork|exec|bad_cli|bad_read]", .{});
 }
 
 fn cmdRunelf(args: []const u8) void {
@@ -1448,6 +1457,7 @@ fn cmdVersion(_: []const u8) void {
 }
 
 fn printTaskRow(task_entry: *const task.Task, is_current: bool) void {
+    const display_name = process.processName(task_entry.pid) orelse task.nameSlice(task_entry);
     log.kprintln("{d: <4} {s: <8} {d: <6} {d: <6} {d: <6} {d: <5} {s: <4} {s}{s}", .{
         task_entry.pid,
         @tagName(task_entry.state),
@@ -1456,7 +1466,7 @@ fn printTaskRow(task_entry: *const task.Task, is_current: bool) void {
         task_entry.yield_count,
         task_entry.priority,
         if (task_entry.is_user) "user" else "kern",
-        task.nameSlice(task_entry),
+        display_name,
         if (is_current) " *" else "",
     });
 }

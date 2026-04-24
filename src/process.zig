@@ -11,6 +11,7 @@ const vfs = @import("vfs.zig");
 const MAX_PROCESSES: usize = task.MAX_TASKS;
 pub const MAX_FILE_DESCRIPTORS: usize = 16;
 pub const FIRST_USER_FD: u64 = 3;
+const MAX_PROCESS_NAME: usize = 32;
 const PAGE_SIZE: u64 = pmm.PAGE_SIZE;
 const PAGE_FRAME_MASK: u64 = 0x000F_FFFF_FFFF_F000;
 
@@ -28,6 +29,8 @@ pub const ProcessInfo = struct {
     exit_code: i32,
     active: bool,
     fds: [MAX_FILE_DESCRIPTORS]FileDescriptor,
+    name: [MAX_PROCESS_NAME]u8,
+    name_len: u8,
 };
 
 pub const KillUserResult = enum {
@@ -54,6 +57,14 @@ pub const MmapResult = union(enum) {
 pub const ForkResult = union(enum) {
     parent: u32,
     not_user,
+    no_memory,
+};
+
+pub const ExecResult = enum {
+    ok,
+    not_user,
+    not_found,
+    bad_elf,
     no_memory,
 };
 
@@ -145,7 +156,7 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
         return null;
     };
 
-    process_table[proc_slot] = .{
+    var info = ProcessInfo{
         .pid = spawned.pid,
         .proc_type = .user,
         .address_space_slot = proc_slot,
@@ -154,7 +165,11 @@ pub fn spawnFlat(name: []const u8, code: []const u8, code_vaddr: u64, entry: u64
         .exit_code = 0,
         .active = true,
         .fds = EMPTY_FILE_DESCRIPTORS,
+        .name = [_]u8{0} ** MAX_PROCESS_NAME,
+        .name_len = 0,
     };
+    setProcessName(&info, name);
+    process_table[proc_slot] = info;
 
     return spawned.pid;
 }
@@ -200,7 +215,7 @@ pub fn spawnElf(name: []const u8, data: []const u8) ?u32 {
         return null;
     };
 
-    process_table[proc_slot] = .{
+    var info = ProcessInfo{
         .pid = spawned.pid,
         .proc_type = .user,
         .address_space_slot = proc_slot,
@@ -209,7 +224,11 @@ pub fn spawnElf(name: []const u8, data: []const u8) ?u32 {
         .exit_code = 0,
         .active = true,
         .fds = EMPTY_FILE_DESCRIPTORS,
+        .name = [_]u8{0} ** MAX_PROCESS_NAME,
+        .name_len = 0,
     };
+    setProcessName(&info, name);
+    process_table[proc_slot] = info;
 
     return spawned.pid;
 }
@@ -343,7 +362,7 @@ pub fn forkCurrent(saved_context: u64) ForkResult {
         return .no_memory;
     };
 
-    process_table[child_slot] = .{
+    var child_info = ProcessInfo{
         .pid = child_task.pid,
         .proc_type = .user,
         .address_space_slot = child_slot,
@@ -352,9 +371,52 @@ pub fn forkCurrent(saved_context: u64) ForkResult {
         .exit_code = 0,
         .active = true,
         .fds = parent_info.fds,
+        .name = [_]u8{0} ** MAX_PROCESS_NAME,
+        .name_len = 0,
     };
+    setProcessName(&child_info, processNameSlice(parent_info));
+    process_table[child_slot] = child_info;
 
     return .{ .parent = child_task.pid };
+}
+
+pub fn execCurrent(path: []const u8, saved_context: u64) ExecResult {
+    const current = task.currentTask() orelse return .not_user;
+    if (!current.is_user) return .not_user;
+
+    const info = getProcessInfoMutable(current.pid) orelse return .not_user;
+    const old_slot = info.address_space_slot orelse return .not_user;
+    const inode_idx = vfs.resolve(path) orelse return .not_found;
+    const inode = vfs.getInode(inode_idx) orelse return .not_found;
+    if (inode.node_type != .regular_file) return .bad_elf;
+    const data = vfs.readFile(inode_idx) orelse return .not_found;
+
+    var parse_result: elf.ParseResult = undefined;
+    if (elf.parse(data, &parse_result) != .ok) return .bad_elf;
+    if (!entryWithinLoadSegment(&parse_result)) return .bad_elf;
+
+    var new_addr_space: user_mem.AddressSpace = undefined;
+    if (!user_mem.createInto(&new_addr_space)) return .no_memory;
+    if (!elf.load(data, &parse_result, &new_addr_space)) {
+        user_mem.destroy(&new_addr_space);
+        return .no_memory;
+    }
+
+    var old_addr_space = address_spaces[old_slot];
+    address_spaces[old_slot] = new_addr_space;
+    info.entry_point = parse_result.entry_point;
+    info.exit_code = 0;
+    setProcessName(info, basename(path));
+    user_mem.activate(&address_spaces[old_slot]);
+    user_mem.destroy(&old_addr_space);
+    task.rewriteUserContext(saved_context, parse_result.entry_point, user_mem.USER_STACK_TOP - 8);
+
+    return .ok;
+}
+
+pub fn processName(pid: u32) ?[]const u8 {
+    const info = getProcessInfoMutable(pid) orelse return null;
+    return processNameSlice(info);
 }
 
 pub fn openCurrentFile(inode_idx: u16) OpenFileResult {
@@ -508,5 +570,26 @@ fn emptyProcessInfo() ProcessInfo {
         .exit_code = 0,
         .active = false,
         .fds = EMPTY_FILE_DESCRIPTORS,
+        .name = [_]u8{0} ** MAX_PROCESS_NAME,
+        .name_len = 0,
     };
+}
+
+fn setProcessName(info: *ProcessInfo, value: []const u8) void {
+    const copy_len = @min(value.len, MAX_PROCESS_NAME - 1);
+    @memcpy(info.name[0..copy_len], value[0..copy_len]);
+    info.name[copy_len] = 0;
+    info.name_len = @intCast(copy_len);
+}
+
+fn processNameSlice(info: *const ProcessInfo) []const u8 {
+    return info.name[0..info.name_len];
+}
+
+fn basename(path: []const u8) []const u8 {
+    var start: usize = 0;
+    for (path, 0..) |byte, index| {
+        if (byte == '/') start = index + 1;
+    }
+    return path[start..];
 }
