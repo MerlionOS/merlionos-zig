@@ -1399,5 +1399,6 @@ Phase 8g: 用户态文件 ABI
 - [x] syscall.zig: SYS_READ 支持已打开 VFS fd
 - [x] shell_cmds.zig / user_programs.zig: runuser file
 - [x] 验证: runuser file 打印 /proc/version 并正常退出
-- [ ] syscall.zig 补充: SYS_MMAP
+- [x] syscall.zig 补充: SYS_MMAP
+- [x] shell_cmds.zig / user_programs.zig: runuser mmap
 ```

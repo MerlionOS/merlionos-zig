@@ -44,6 +44,13 @@ pub const BrkResult = union(enum) {
     no_memory,
 };
 
+pub const MmapResult = union(enum) {
+    ok: u64,
+    not_user,
+    invalid,
+    no_memory,
+};
+
 pub const OpenFileResult = union(enum) {
     ok: u64,
     not_user,
@@ -290,6 +297,19 @@ pub fn brkCurrent(new_brk: u64) BrkResult {
     if (new_brk == 0) return .{ .ok = addr_space.brk };
     return switch (user_mem.setBrk(addr_space, new_brk)) {
         .ok => .{ .ok = addr_space.brk },
+        .invalid => .invalid,
+        .no_memory => .no_memory,
+    };
+}
+
+pub fn mmapCurrent(addr: u64, length: u64) MmapResult {
+    const current = task.currentTask() orelse return .not_user;
+    const info = getProcessInfoMutable(current.pid) orelse return .not_user;
+    const slot = info.address_space_slot orelse return .not_user;
+    const addr_space = &address_spaces[slot];
+
+    return switch (user_mem.mmap(addr_space, addr, length)) {
+        .ok => |mapped_addr| .{ .ok = mapped_addr },
         .invalid => .invalid,
         .no_memory => .no_memory,
     };

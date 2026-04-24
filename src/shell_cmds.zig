@@ -1228,6 +1228,15 @@ fn cmdRunuser(args: []const u8) void {
         _ = scheduler.yield();
         return;
     }
+    if (strEql(name, "mmap")) {
+        const pid = process.spawnFlat("mmap_user", user_programs.mmap_user[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
+            log.kprintln("runuser: failed to spawn mmap", .{});
+            return;
+        };
+        log.kprintln("runuser: spawned mmap pid={d}", .{pid});
+        _ = scheduler.yield();
+        return;
+    }
     if (strEql(name, "bad_cli")) {
         const pid = process.spawnFlat("bad_cli", user_programs.bad_cli[0..], user_mem.USER_TEXT_BASE, user_mem.USER_TEXT_BASE) orelse {
             log.kprintln("runuser: failed to spawn bad_cli", .{});
@@ -1247,7 +1256,7 @@ fn cmdRunuser(args: []const u8) void {
         return;
     }
 
-    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|read|file|bad_cli|bad_read]", .{});
+    log.kprintln("Usage: runuser [hello|loop|pair|sleep|brk|read|file|mmap|bad_cli|bad_read]", .{});
 }
 
 fn cmdRunelf(args: []const u8) void {

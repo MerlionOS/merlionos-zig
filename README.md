@@ -143,7 +143,7 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] Protection tests: `bad_cli` and `bad_read`
 - [x] Multi-user-process preemption with `runuser pair`
 
-### Phase 11: Userland File ABI (current)
+### Phase 11: Userland File ABI (complete)
 - [x] Userland file syscall roadmap/spec updates
 - [x] Per-process VFS file descriptor table
 - [x] Process lifecycle syscall: `SYS_OPEN`
@@ -152,7 +152,8 @@ OPENAI_API_KEY=... python3 tools/ai_proxy.py --socket /tmp/merlionos-ai.sock \
 - [x] File-backed `SYS_READ` for user fd >= 3
 - [x] Built-in `file_user` flat program and `runuser file` shell integration
 - [x] Phase 11 QEMU regression after file syscalls
-- [ ] Process lifecycle syscall: `SYS_MMAP`
+- [x] Process lifecycle syscall: `SYS_MMAP`
+- [x] Built-in `mmap_user` flat program and `runuser mmap` shell integration
 
 ## Zig vs Rust: Why Rewrite?
 
