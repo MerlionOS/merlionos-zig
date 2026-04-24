@@ -21,9 +21,10 @@ pub const SYS = enum(u64) {
     CLOSE = 8,
     STAT = 9,
     MMAP = 10,
+    FORK = 11,
 };
 
-pub const MAX_SYSCALL = 10;
+pub const MAX_SYSCALL = 11;
 
 pub const ENOSYS: i64 = -1;
 pub const EFAULT: i64 = -2;
@@ -57,6 +58,7 @@ pub const Stats = struct {
 };
 
 var stats: Stats = std.mem.zeroes(Stats);
+var current_syscall_frame: u64 = 0;
 
 pub fn init() void {
     stats = std.mem.zeroes(Stats);
@@ -84,6 +86,10 @@ pub export fn syscallDispatch(
     return result;
 }
 
+pub export fn syscallSetCurrentFrame(frame: u64) callconv(.c) void {
+    current_syscall_frame = frame;
+}
+
 pub fn getStats() Stats {
     return stats;
 }
@@ -101,6 +107,7 @@ pub fn syscallName(number: usize) []const u8 {
         8 => "CLOSE",
         9 => "STAT",
         10 => "MMAP",
+        11 => "FORK",
         else => "UNKNOWN",
     };
 }
@@ -128,6 +135,7 @@ fn dispatch(ctx: SyscallContext) u64 {
         .CLOSE => sysClose(ctx.arg1),
         .STAT => sysStat(ctx.arg1, ctx.arg2, ctx.arg3),
         .MMAP => sysMmap(ctx.arg1, ctx.arg2),
+        .FORK => sysFork(),
     };
 }
 
@@ -281,6 +289,15 @@ fn sysMmap(addr: u64, length: u64) u64 {
     return switch (process.mmapCurrent(addr, length)) {
         .ok => |mapped_addr| mapped_addr,
         .not_user, .invalid => err(EINVAL),
+        .no_memory => err(ENOMEM),
+    };
+}
+
+fn sysFork() u64 {
+    if (current_syscall_frame == 0) return err(EINVAL);
+    return switch (process.forkCurrent(current_syscall_frame)) {
+        .parent => |child_pid| child_pid,
+        .not_user => err(ENOSYS),
         .no_memory => err(ENOMEM),
     };
 }

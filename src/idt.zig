@@ -188,6 +188,8 @@ fn syscallStub() callconv(.naked) void {
         \\pushq %%r13
         \\pushq %%r14
         \\pushq %%r15
+        \\movq %%rsp, %%rdi
+        \\call syscallSetCurrentFrame
         \\movq 112(%%rsp), %%rdi
         \\movq 64(%%rsp), %%rsi
         \\movq 72(%%rsp), %%rdx

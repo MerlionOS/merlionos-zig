@@ -51,6 +51,12 @@ pub const MmapResult = union(enum) {
     no_memory,
 };
 
+pub const ForkResult = union(enum) {
+    parent: u32,
+    not_user,
+    no_memory,
+};
+
 pub const OpenFileResult = union(enum) {
     ok: u64,
     not_user,
@@ -313,6 +319,42 @@ pub fn mmapCurrent(addr: u64, length: u64) MmapResult {
         .invalid => .invalid,
         .no_memory => .no_memory,
     };
+}
+
+pub fn forkCurrent(saved_context: u64) ForkResult {
+    const parent_task = task.currentTask() orelse return .not_user;
+    if (!parent_task.is_user) return .not_user;
+
+    const parent_info = getProcessInfoMutable(parent_task.pid) orelse return .not_user;
+    const parent_slot = parent_info.address_space_slot orelse return .not_user;
+    const child_slot = findFreeSlot() orelse return .no_memory;
+
+    const child_addr_space = &address_spaces[child_slot];
+    if (!user_mem.cloneAddressSpace(&address_spaces[parent_slot], child_addr_space)) return .no_memory;
+    address_space_used[child_slot] = true;
+
+    const child_task = task.forkUserFromContext(parent_task, saved_context) orelse {
+        releaseAddressSpace(child_slot);
+        return .no_memory;
+    };
+    const child = task.getTask(child_task.index) orelse {
+        _ = task.kill(child_task.pid);
+        releaseAddressSpace(child_slot);
+        return .no_memory;
+    };
+
+    process_table[child_slot] = .{
+        .pid = child_task.pid,
+        .proc_type = .user,
+        .address_space_slot = child_slot,
+        .kernel_stack_top = child.stack_top,
+        .entry_point = parent_info.entry_point,
+        .exit_code = 0,
+        .active = true,
+        .fds = parent_info.fds,
+    };
+
+    return .{ .parent = child_task.pid };
 }
 
 pub fn openCurrentFile(inode_idx: u16) OpenFileResult {

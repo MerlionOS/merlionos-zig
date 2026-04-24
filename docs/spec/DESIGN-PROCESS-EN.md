@@ -550,12 +550,12 @@ Phase 12a: Address-space cloning
 - [x] Verify: clonememtest ok, and the two address spaces at the same virtual address are physically isolated
 
 Phase 12b: SYS_FORK
-- [ ] syscall.zig: SYS.FORK=11, MAX_SYSCALL updated
-- [ ] syscall.zig: current_syscall_frame capture (asm side in idt.syscallStub + Zig side)
-- [ ] task.zig: parent_pid, exit_status, wait_on_pid fields
-- [ ] process.zig: forkCurrent, ForkResult, reserveSlot
-- [ ] syscall.zig: sysFork wiring
-- [ ] Verify: /bin/fork_demo.elf parent/child output, rax=0/child_pid split
+- [x] syscall.zig: SYS.FORK=11, MAX_SYSCALL updated
+- [x] syscall.zig: current_syscall_frame capture (asm side in idt.syscallStub + Zig side)
+- [x] task.zig: parent_pid, exit_status, wait_on_pid fields
+- [x] process.zig: forkCurrent, ForkResult, reserveSlot
+- [x] syscall.zig: sysFork wiring
+- [x] Verify: runuser fork parent/child output, rax=0/child_pid split
 
 Phase 12c: SYS_EXEC
 - [ ] process.zig: execCurrent, ExecResult
