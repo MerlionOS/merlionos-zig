@@ -22,9 +22,10 @@ pub const SYS = enum(u64) {
     STAT = 9,
     MMAP = 10,
     FORK = 11,
+    EXEC = 12,
 };
 
-pub const MAX_SYSCALL = 11;
+pub const MAX_SYSCALL = 12;
 
 pub const ENOSYS: i64 = -1;
 pub const EFAULT: i64 = -2;
@@ -108,6 +109,7 @@ pub fn syscallName(number: usize) []const u8 {
         9 => "STAT",
         10 => "MMAP",
         11 => "FORK",
+        12 => "EXEC",
         else => "UNKNOWN",
     };
 }
@@ -136,6 +138,7 @@ fn dispatch(ctx: SyscallContext) u64 {
         .STAT => sysStat(ctx.arg1, ctx.arg2, ctx.arg3),
         .MMAP => sysMmap(ctx.arg1, ctx.arg2),
         .FORK => sysFork(),
+        .EXEC => sysExec(ctx.arg1),
     };
 }
 
@@ -298,6 +301,20 @@ fn sysFork() u64 {
     return switch (process.forkCurrent(current_syscall_frame)) {
         .parent => |child_pid| child_pid,
         .not_user => err(ENOSYS),
+        .no_memory => err(ENOMEM),
+    };
+}
+
+fn sysExec(path_ptr: u64) u64 {
+    if (current_syscall_frame == 0) return err(EINVAL);
+
+    var path_buffer: [MAX_USER_PATH]u8 = undefined;
+    const path = copyUserString(&path_buffer, path_ptr) orelse return err(EFAULT);
+    return switch (process.execCurrent(path, current_syscall_frame)) {
+        .ok => 0,
+        .not_user => err(ENOSYS),
+        .not_found => err(ENOENT),
+        .bad_elf => err(EINVAL),
         .no_memory => err(ENOMEM),
     };
 }

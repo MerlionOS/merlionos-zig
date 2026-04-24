@@ -554,11 +554,11 @@ Phase 12b: SYS_FORK
 - [x] 验证: runuser fork 父子输出、rax=0/child_pid 分流
 
 Phase 12c: SYS_EXEC
-- [ ] process.zig: execCurrent, ExecResult
-- [ ] syscall.zig: sysExec + 成功时覆盖 iretq 栈帧
-- [ ] process.zig: ProcessInfo.name 字段 + basename 提取
-- [ ] shell_cmds.zig: ps 显示 NAME
-- [ ] 验证: /bin/exec_demo.elf 打印 "Hello from Ring 3!" 且 pid 不变
+- [x] process.zig: execCurrent, ExecResult
+- [x] syscall.zig: sysExec + 成功时覆盖 iretq 栈帧
+- [x] process.zig: ProcessInfo.name 字段 + basename 提取
+- [x] shell_cmds.zig: ps 显示 NAME
+- [x] 验证: runuser exec 打印 "Hello from Ring 3!" 且未走失败路径
 
 Phase 12d: SYS_WAITPID
 - [ ] task.zig: TaskState.zombie
