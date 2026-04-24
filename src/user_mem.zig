@@ -42,6 +42,18 @@ pub const SelfTestResult = enum {
     restore_failed,
 };
 
+pub const CloneSelfTestResult = enum {
+    ok,
+    source_create_failed,
+    source_map_failed,
+    clone_failed,
+    content_mismatch,
+    isolation_failed,
+    physical_alias,
+    metadata_mismatch,
+    restore_failed,
+};
+
 pub const BrkResult = enum {
     ok,
     invalid,
@@ -66,7 +78,7 @@ pub fn create() ?AddressSpace {
     return as;
 }
 
-pub fn createInto(as: *AddressSpace) bool {
+pub fn createBlank(as: *AddressSpace) bool {
     if (kernel_cr3 == 0) init();
 
     const pml4_phys = pmm.allocFrame() orelse return false;
@@ -86,6 +98,12 @@ pub fn createInto(as: *AddressSpace) bool {
         record.* = emptyPageRecord();
     }
 
+    return true;
+}
+
+pub fn createInto(as: *AddressSpace) bool {
+    if (!createBlank(as)) return false;
+
     var stack_page = USER_STACK_TOP - USER_STACK_SIZE;
     while (stack_page < USER_STACK_TOP) : (stack_page += PAGE_SIZE) {
         if (!mapUserPage(as, stack_page, true)) {
@@ -94,6 +112,33 @@ pub fn createInto(as: *AddressSpace) bool {
         }
     }
 
+    return true;
+}
+
+pub fn cloneAddressSpace(src: *const AddressSpace, dst: *AddressSpace) bool {
+    if (!createBlank(dst)) return false;
+    dst.brk = src.brk;
+    dst.mmap_next = src.mmap_next;
+
+    const saved_cr3 = cpu.readCr3() & PAGE_FRAME_MASK;
+    for (src.pages) |record| {
+        if (!record.active) continue;
+
+        const new_phys = pmm.allocFrame() orelse {
+            cpu.writeCr3(saved_cr3);
+            destroy(dst);
+            return false;
+        };
+        copyFrame(new_phys, record.phys);
+        if (!mapUserPagePhys(dst, record.virt, new_phys, true)) {
+            pmm.freeFrame(new_phys);
+            cpu.writeCr3(saved_cr3);
+            destroy(dst);
+            return false;
+        }
+    }
+
+    cpu.writeCr3(saved_cr3);
     return true;
 }
 
@@ -273,6 +318,62 @@ pub fn selfTest() SelfTestResult {
     return .ok;
 }
 
+pub fn cloneSelfTest() CloneSelfTestResult {
+    const saved_cr3 = cpu.readCr3() & PAGE_FRAME_MASK;
+    var src = create() orelse return .source_create_failed;
+    defer destroy(&src);
+
+    if (!mapUserPage(&src, USER_TEXT_BASE, true)) return .source_map_failed;
+    if (!mapUserPage(&src, USER_TEXT_BASE + PAGE_SIZE, true)) return .source_map_failed;
+    src.brk = USER_HEAP_BASE + PAGE_SIZE;
+    src.mmap_next = USER_MMAP_BASE + PAGE_SIZE;
+
+    activate(&src);
+    writeByte(USER_TEXT_BASE, 0x5a);
+    writeByte(USER_TEXT_BASE + PAGE_SIZE, 0xa5);
+    const src_first_phys = vmm.translateAddr(USER_TEXT_BASE) orelse {
+        cpu.writeCr3(saved_cr3);
+        return .source_map_failed;
+    };
+    const src_second_phys = vmm.translateAddr(USER_TEXT_BASE + PAGE_SIZE) orelse {
+        cpu.writeCr3(saved_cr3);
+        return .source_map_failed;
+    };
+    cpu.writeCr3(saved_cr3);
+
+    var dst: AddressSpace = undefined;
+    if (!cloneAddressSpace(&src, &dst)) return .clone_failed;
+    defer destroy(&dst);
+
+    if (dst.brk != src.brk or dst.mmap_next != src.mmap_next) return .metadata_mismatch;
+
+    activate(&dst);
+    const dst_first_phys = vmm.translateAddr(USER_TEXT_BASE) orelse {
+        cpu.writeCr3(saved_cr3);
+        return .clone_failed;
+    };
+    const dst_second_phys = vmm.translateAddr(USER_TEXT_BASE + PAGE_SIZE) orelse {
+        cpu.writeCr3(saved_cr3);
+        return .clone_failed;
+    };
+    if (dst_first_phys == src_first_phys or dst_second_phys == src_second_phys) {
+        cpu.writeCr3(saved_cr3);
+        return .physical_alias;
+    }
+    if (readByte(USER_TEXT_BASE) != 0x5a or readByte(USER_TEXT_BASE + PAGE_SIZE) != 0xa5) {
+        cpu.writeCr3(saved_cr3);
+        return .content_mismatch;
+    }
+    writeByte(USER_TEXT_BASE + PAGE_SIZE, 0x3c);
+
+    activate(&src);
+    const source_unchanged = readByte(USER_TEXT_BASE + PAGE_SIZE) == 0xa5;
+    cpu.writeCr3(saved_cr3);
+    if (!source_unchanged) return .isolation_failed;
+    if ((cpu.readCr3() & PAGE_FRAME_MASK) != saved_cr3) return .restore_failed;
+    return .ok;
+}
+
 fn validUserPage(virt: u64) bool {
     if ((virt & PAGE_MASK) != 0) return false;
     if (virt == 0 or virt > USER_ADDR_MAX) return false;
@@ -351,6 +452,22 @@ fn freeUserPageTables(pml4_phys: u64) void {
 fn zeroFrame(phys: u64) void {
     const bytes: [*]u8 = @ptrFromInt(pmm.physToVirt(phys));
     @memset(bytes[0..PAGE_SIZE], 0);
+}
+
+fn copyFrame(dst_phys: u64, src_phys: u64) void {
+    const dst: [*]u8 = @ptrFromInt(pmm.physToVirt(dst_phys));
+    const src: [*]const u8 = @ptrFromInt(pmm.physToVirt(src_phys));
+    @memcpy(dst[0..PAGE_SIZE], src[0..PAGE_SIZE]);
+}
+
+fn readByte(virt: u64) u8 {
+    const ptr: *const u8 = @ptrFromInt(virt);
+    return ptr.*;
+}
+
+fn writeByte(virt: u64, value: u8) void {
+    const ptr: *u8 = @ptrFromInt(virt);
+    ptr.* = value;
 }
 
 fn alignDown(value: u64) u64 {

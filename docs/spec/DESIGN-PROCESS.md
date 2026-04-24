@@ -539,11 +539,11 @@ merlion>
 
 ```
 Phase 12a: 地址空间克隆
-- [ ] user_mem.zig: createBlank（无用户栈变种）
-- [ ] user_mem.zig: cloneAddressSpace
-- [ ] user_mem.zig: cloneSelfTest
-- [ ] shell_cmds.zig: clonememtest 命令
-- [ ] 验证: clonememtest ok，且两个 AS 的同一虚地址物理隔离
+- [x] user_mem.zig: createBlank（无用户栈变种）
+- [x] user_mem.zig: cloneAddressSpace
+- [x] user_mem.zig: cloneSelfTest
+- [x] shell_cmds.zig: clonememtest 命令
+- [x] 验证: clonememtest ok，且两个 AS 的同一虚地址物理隔离
 
 Phase 12b: SYS_FORK
 - [ ] syscall.zig: SYS.FORK=11, MAX_SYSCALL 更新
